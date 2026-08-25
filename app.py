@@ -103,6 +103,13 @@ def guardar_config(dolar, m100, mdec, envase):
     conn.commit()
     conn.close()
 
+def normalizar_texto(texto):
+    if not texto:
+        return ""
+    txt = str(texto).lower().strip()
+    txt = re.sub(r'\s+', ' ', txt)
+    return txt
+
 # ---------------------------------------------------------
 # Funciones Auxiliares
 # ---------------------------------------------------------
@@ -537,19 +544,38 @@ with tab5:
 
         if guardar:
             if nombre.strip() != "":
-                try:
-                    conn = sqlite3.connect('inventario.db')
-                    c = conn.cursor()
+                conn = sqlite3.connect('inventario.db')
+                c = conn.cursor()
+                
+                c.execute("SELECT id, nombre FROM stock")
+                todos = c.fetchall()
+                
+                nom_norm = normalizar_texto(nombre.strip())
+                encontrado_id = None
+                
+                for item_id, row_nom in todos:
+                    if normalizar_texto(row_nom) == nom_norm:
+                        encontrado_id = item_id
+                        break
+                
+                if encontrado_id:
+                    c.execute('''
+                        UPDATE stock 
+                        SET tipo = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, 
+                            decants_10ml_preparados = ?, costo_usd = ?, estado = ?, socio_asignado = ?
+                        WHERE id = ?
+                    ''', (tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio, encontrado_id))
+                    st.warning(f"El perfume '{nombre.strip()}' ya existía. Se actualizaron sus datos sin duplicar.")
+                else:
                     c.execute('''
                         INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio))
-                    conn.commit()
-                    conn.close()
                     st.success("¡Producto cargado correctamente!")
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("Ya existe un perfume registrado con ese nombre.")
+                    
+                conn.commit()
+                conn.close()
+                st.rerun()
 
 # ---------------------------------------------------------
 # TAB 6: Importación de PDF Proveedor
@@ -588,19 +614,30 @@ with tab6:
 
             if items:
                 df_pdf = pd.DataFrame(items)
-                st.write(f"Se detectaron **{len(df_pdf)}** perfumes:")
+                
+                # Eliminar duplicados dentro del mismo PDF detectado
+                df_pdf["nombre_norm"] = df_pdf["nombre"].apply(normalizar_texto)
+                df_pdf = df_pdf.drop_duplicates(subset=["nombre_norm"]).drop(columns=["nombre_norm"])
+                
+                st.write(f"Se detectaron **{len(df_pdf)}** perfumes únicos en el PDF:")
                 st.dataframe(df_pdf, use_container_width=True)
 
                 if st.button("🚀 Sincronizar catálogo del PDF", type="primary"):
                     conn = sqlite3.connect('inventario.db')
                     c = conn.cursor()
+                    
+                    # Obtener productos existentes en la BD
+                    c.execute("SELECT id, nombre FROM stock")
+                    existentes_bd = c.fetchall()
+                    dict_existentes = {normalizar_texto(nom): id_bd for id_bd, nom in existentes_bd}
+                    
                     cargados, actualizados = 0, 0
                     
                     for _, r in df_pdf.iterrows():
-                        c.execute("SELECT id FROM stock WHERE LOWER(nombre) = LOWER(?)", (r['nombre'],))
-                        existe = c.fetchone()
-                        if existe:
-                            c.execute("UPDATE stock SET costo_usd = ? WHERE id = ?", (r['costo_usd'], existe[0]))
+                        nom_pdf_norm = normalizar_texto(r['nombre'])
+                        if nom_pdf_norm in dict_existentes:
+                            id_bd = dict_existentes[nom_pdf_norm]
+                            c.execute("UPDATE stock SET costo_usd = ? WHERE id = ?", (r['costo_usd'], id_bd))
                             actualizados += 1
                         else:
                             c.execute('''
@@ -608,30 +645,32 @@ with tab6:
                                 VALUES (?, 'Árabe', 0, 0, 0, ?, 'A pedido', ?)
                             ''', (r['nombre'], r['costo_usd'], socio_dest))
                             cargados += 1
+                            dict_existentes[nom_pdf_norm] = c.lastrowid
                             
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Sincronizado! {cargados} creados y {actualizados} actualizados.")
+                    st.success(f"¡Sincronizado sin duplicados! {cargados} creados y {actualizados} actualizados.")
                     st.rerun()
         except Exception as e:
             st.error(f"Error procesando PDF: {e}")
 
 # ---------------------------------------------------------
-# TAB 7: Editar Estado, Stock y Vaciar Inventario
+# TAB 7: Editar / Eliminar Productos
 # ---------------------------------------------------------
 with tab7:
-    st.header("✏️ Modificar Producto o Vaciar Inventario")
+    st.header("✏️ Modificar o Eliminar Producto")
     df_mod = cargar_datos_stock()
 
     if not df_mod.empty:
         df_mod["estado"] = df_mod["estado"].replace("Disponible en Proveedor", "A pedido")
         opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'A pedido')}]" for _, row in df_mod.iterrows()]
-        prod_sel = st.selectbox("Selecciona producto a modificar:", opciones_mod)
+        prod_sel = st.selectbox("Selecciona producto a gestionar:", opciones_mod)
         id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
         row_idx = df_mod[df_mod['id'] == id_mod].index[0]
         prod_data = df_mod.loc[row_idx]
 
         with st.form("form_edicion"):
+            st.subheader("Editar Datos")
             nuevo_nombre = st.text_input("Nombre", value=prod_data['nombre'])
             nuevo_tipo = st.selectbox("Tipo", ["Árabe", "Diseñador"], index=0 if prod_data['tipo'] == "Árabe" else 1)
             nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(prod_data['estado']) if prod_data['estado'] in ESTADOS else 0)
@@ -662,9 +701,20 @@ with tab7:
                 st.success("¡Producto actualizado!")
                 st.rerun()
 
+        st.markdown("---")
+        st.subheader("🗑️ Eliminar Producto Individual (Libre sin clave)")
+        if st.button(f"🗑️ Eliminar '{prod_data['nombre']}' del catálogo", type="secondary"):
+            conn = sqlite3.connect('inventario.db')
+            c = conn.cursor()
+            c.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
+            conn.commit()
+            conn.close()
+            st.success(f"Se eliminó '{prod_data['nombre']}' correctamente.")
+            st.rerun()
+
     st.markdown("---")
     st.subheader("🚨 ZONA PROTEGIDA: Vaciar Todo el Catálogo")
-    clave_inv_input = st.text_input("🔑 Clave de Administrador:", type="password", key="pwd_inv")
+    clave_inv_input = st.text_input("🔑 Clave de Administrador para vaciar catálogo completo:", type="password", key="pwd_inv")
     if st.button("🚨 VACIAR CATALOGO Y STOCK COMPLETO", type="primary"):
         if clave_inv_input == CLAVE_ADMIN:
             conn = sqlite3.connect('inventario.db')
@@ -678,7 +728,7 @@ with tab7:
             st.error("❌ Clave incorrecta.")
 
 # ---------------------------------------------------------
-# TAB 8: Historial Protegido
+# TAB 8: Historial de Movimientos
 # ---------------------------------------------------------
 with tab8:
     st.header("📜 Historial de Movimientos")
@@ -687,36 +737,34 @@ with tab8:
     if not df_hist.empty:
         st.dataframe(df_hist.drop(columns=['id']), use_container_width=True)
         st.markdown("---")
-        clave_hist = st.text_input("🔑 Clave de Administrador para modificar historial:", type="password", key="pwd_hist")
         
-        opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']}" for _, row in df_hist.iterrows()]
-        reg_sel = st.selectbox("Selecciona registro a borrar:", opciones_hist)
+        st.subheader("❌ Eliminar Un Movimiento Individual (Libre sin clave)")
+        opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} ({row['tipo_movimiento']})" for _, row in df_hist.iterrows()]
+        reg_sel = st.selectbox("Selecciona registro a eliminar del historial:", opciones_hist)
         id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
 
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("❌ Eliminar Registro Seleccionado"):
-                if clave_hist == CLAVE_ADMIN:
-                    conn = sqlite3.connect('inventario.db')
-                    c = conn.cursor()
-                    c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
-                    conn.commit()
-                    conn.close()
-                    st.success("Registro eliminado.")
-                    st.rerun()
-                else:
-                    st.error("❌ Clave incorrecta.")
-        with c2:
-            if st.button("🚨 VACIAR HISTORIAL COMPLETO", type="secondary"):
-                if clave_hist == CLAVE_ADMIN:
-                    conn = sqlite3.connect('inventario.db')
-                    c = conn.cursor()
-                    c.execute("DELETE FROM historial")
-                    conn.commit()
-                    conn.close()
-                    st.warning("Historial vaciado.")
-                    st.rerun()
-                else:
-                    st.error("❌ Clave incorrecta.")
+        if st.button("❌ Eliminar Movimiento Seleccionado", type="secondary"):
+            conn = sqlite3.connect('inventario.db')
+            c = conn.cursor()
+            c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
+            conn.commit()
+            conn.close()
+            st.success("Movimiento eliminado del historial.")
+            st.rerun()
+
+        st.markdown("---")
+        st.subheader("🚨 ZONA PROTEGIDA: Vaciar Historial Completo")
+        clave_hist = st.text_input("🔑 Clave de Administrador para vaciar historial completo:", type="password", key="pwd_hist")
+        if st.button("🚨 VACIAR HISTORIAL COMPLETO", type="primary"):
+            if clave_hist == CLAVE_ADMIN:
+                conn = sqlite3.connect('inventario.db')
+                c = conn.cursor()
+                c.execute("DELETE FROM historial")
+                conn.commit()
+                conn.close()
+                st.warning("Historial vaciado completamente.")
+                st.rerun()
+            else:
+                st.error("❌ Clave incorrecta.")
     else:
         st.info("No hay movimientos registrados.")

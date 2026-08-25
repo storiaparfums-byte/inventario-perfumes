@@ -565,7 +565,8 @@ else:
                 "➕ Agregar Perfume", 
                 "📄 Cargar PDF Proveedor",
                 "✏️ Editar / Eliminar",
-                "📜 Historial"
+                "📜 Historial",
+                "💾 Copia de Seguridad"
             ]
         )
 
@@ -852,6 +853,8 @@ else:
         # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
         elif seccion_admin == "📄 Cargar PDF Proveedor":
             st.header("📄 Procesar PDF Proveedor")
+            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, si un perfume ya existe en la base de datos se conservará todo su stock, imágenes y notas olfativas, **actualizando únicamente el costo USD**. Si el perfume es nuevo, se agregará como 'A pedido' para que puedan cargarlo libremente.")
+            
             with st.expander("⚙️ Ajustes de Precios Globales"):
                 nuevo_dolar = st.number_input("Dólar (ARS)", value=float(dolar_hoy))
                 nuevo_m100 = st.number_input("Margen 100ml %", value=float(margen_100_gen))
@@ -878,7 +881,7 @@ else:
                         df_pdf = pd.DataFrame(items)
                         df_pdf["nombre_norm"] = df_pdf["nombre"].apply(normalizar_texto)
                         df_pdf = df_pdf.drop_duplicates(subset=["nombre_norm"]).drop(columns=["nombre_norm"])
-                        st.write(f"Detectados: **{len(df_pdf)}** perfumes únicos")
+                        st.write(f"Detectados: **{len(df_pdf)}** perfumes únicos en el PDF")
                         st.dataframe(df_pdf, use_container_width=True)
 
                         if st.button("🚀 Sincronizar Catálogo"):
@@ -901,7 +904,7 @@ else:
                                     cargados += 1
                             conn.commit()
                             conn.close()
-                            st.success(f"¡Sincronizado! {cargados} creados y {actualizados} actualizados.")
+                            st.success(f"¡Sincronizado! {actualizados} precios actualizados conservando sus datos y {cargados} perfumes nuevos agregados.")
                             st.rerun()
                 except Exception as e:
                     st.error(f"Error procesando PDF: {e}")
@@ -1019,3 +1022,34 @@ else:
                         st.error("Clave incorrecta.")
             else:
                 st.info("Sin movimientos en el historial.")
+
+        # --- SECCIÓN: COPIA DE SEGURIDAD (BACKUP) ---
+        elif seccion_admin == "💾 Copia de Seguridad":
+            st.header("💾 Copia de Seguridad y Respaldo")
+            st.info("Descarga una copia completa de la base de datos (inventario, stock, precios, marcas de señas e historial) para tenerla a resguardo en tu equipo.")
+            
+            try:
+                with open("inventario.db", "rb") as fp:
+                    backup_bytes = fp.read()
+                    
+                st.download_button(
+                    label="📥 Descargar Base de Datos Completa (.db)",
+                    data=backup_bytes,
+                    file_name=f"Backup_Storia_Parfums_{datetime.now().strftime('%Y_%m_%d_%H%M')}.db",
+                    mime="application/x-sqlite3"
+                )
+            except FileNotFoundError:
+                st.error("Aún no se ha generado la base de datos local.")
+                
+            st.markdown("---")
+            st.subheader("🔄 Restaurar Copia de Seguridad")
+            st.caption("Si necesitas restaurar una versión anterior o migrar datos a un nuevo servidor, sube tu archivo `.db` aquí:")
+            
+            uploaded_backup = st.file_uploader("Subir archivo de respaldo (.db):", type=["db"])
+            
+            if uploaded_backup is not None:
+                if st.button("⚠️ Confirmar y Restaurar Base de Datos"):
+                    with open("inventario.db", "wb") as f:
+                        f.write(uploaded_backup.getbuffer())
+                    st.success("¡Base de datos restaurada con éxito!")
+                    st.rerun()

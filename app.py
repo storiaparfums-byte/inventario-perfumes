@@ -96,10 +96,25 @@ def obtener_config():
     return res if res else (1200.0, 30.0, 100.0, 800.0)
 
 def extraer_perfume_y_precio(linea):
+    """Filtro avanzado para extraer el nombre del perfume y el costo en USD exacto"""
+    # Limpiar mililitros y concentraciones comunes que confunden la lectura
     linea_limpia = re.sub(r'(?i)\b\d+\s*(ml|gr|oz)\b', '', linea)
+    linea_limpia = re.sub(r'(?i)\b(edp|edt|parfum|cologne|extde)\b', '', linea_limpia)
+    
+    # Buscar patrón explícito de precio en USD ($XX.XX o $XX)
     match_precio = re.search(r'\$\s*(\d+[\.\,]?\d*)', linea_limpia)
     
-    if not match_precio:
+    if match_precio:
+        precio_str = match_precio.group(1)
+        idx_precio = linea_limpia.rfind(match_precio.group(0))
+        nombre = linea_limpia[:idx_precio].strip()
+        try:
+            precio = float(precio_str.replace(",", "."))
+            return nombre, precio
+        except ValueError:
+            return None, None
+    else:
+        # Si no hay signo $, buscar el último número al final de la línea
         numeros = re.findall(r'\b\d+[\.\,]?\d*\b', linea_limpia)
         if numeros:
             precio_str = numeros[-1]
@@ -110,16 +125,7 @@ def extraer_perfume_y_precio(linea):
                 return nombre, precio
             except ValueError:
                 return None, None
-        return None, None
-    else:
-        precio_str = match_precio.group(1)
-        idx_precio = linea_limpia.rfind(match_precio.group(0))
-        nombre = linea_limpia[:idx_precio].strip()
-        try:
-            precio = float(precio_str.replace(",", "."))
-            return nombre, precio
-        except ValueError:
-            return None, None
+    return None, None
 
 # ---------------------------------------------------------
 # Interfaz Gráfica
@@ -138,7 +144,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = obtener_config()
 
 # ---------------------------------------------------------
-# TAB 1: Inventario Global y Filtro por Estado
+# TAB 1: Inventario Global
 # ---------------------------------------------------------
 with tab1:
     st.header("Inventario Global y Precios")
@@ -218,7 +224,7 @@ with tab1:
         st.info("No hay perfumes cargados en el inventario.")
 
 # ---------------------------------------------------------
-# TAB 2: Registrar salidas, ventas y Calculadora de Descuentos
+# TAB 2: Registrar salidas, ventas y Calculadora con Descuento Manual
 # ---------------------------------------------------------
 with tab2:
     st.header("🛒 Registrar Venta y Calculadora de Promociones")
@@ -304,7 +310,6 @@ with tab2:
         st.markdown("---")
         st.subheader("🏷️ 2. Calculadora de Promociones (Venta de 2 o más perfumes)")
         
-        # Selección múltiple de productos para presupuesto
         df_actual["costo_usd"] = df_actual["costo_usd"].fillna(0.0)
         df_actual["margen_aplicado"] = df_actual["margen_100ml_custom"].fillna(margen_100_gen)
         df_actual["precio_100ml_ars"] = (df_actual["costo_usd"] * dolar_hoy) * (1 + (df_actual["margen_aplicado"] / 100))
@@ -315,9 +320,13 @@ with tab2:
             subtotal = df_actual[df_actual["nombre"].isin(prods_combo)]["precio_100ml_ars"].sum()
             cant = len(prods_combo)
             
-            # Descuento configurable
-            pct_descuento = st.slider("Porcentaje de Descuento Especial (%)", min_value=0, max_value=30, value=10 if cant >= 2 else 0, step=5)
-            
+            # Entrada manual o deslizante para porcentaje de descuento
+            col_dsc1, col_dsc2 = st.columns([1, 2])
+            with col_dsc1:
+                pct_descuento_num = st.number_input("Escribe el % de Descuento Manual:", min_value=0.0, max_value=100.0, value=10.0 if cant >= 2 else 0.0, step=1.0)
+            with col_dsc2:
+                pct_descuento = st.slider("Ajustar con barra %:", min_value=0.0, max_value=100.0, value=float(pct_descuento_num), step=1.0)
+
             monto_descuento = subtotal * (pct_descuento / 100)
             total_final = subtotal - monto_descuento
             
@@ -325,7 +334,7 @@ with tab2:
             with c_combo1:
                 st.metric("Subtotal Normal", f"${subtotal:,.0f} ARS")
             with c_combo2:
-                st.metric(f"Ahorro Cliente ({pct_descuento}%)", f"-${monto_descuento:,.0f} ARS")
+                st.metric(f"Ahorro Cliente ({pct_descuento:.0f}%)", f"-${monto_descuento:,.0f} ARS")
             with c_combo3:
                 st.metric("Total a Cobrar", f"${total_final:,.0f} ARS")
 
@@ -371,7 +380,7 @@ with tab3:
                 st.error("Debes ingresar el nombre del perfume.")
 
 # ---------------------------------------------------------
-# TAB 4: Importación Automática de PDF (Todos disponibles en proveedor)
+# TAB 4: Importación de PDF (Todos a 0 Unidades en Stock Físico)
 # ---------------------------------------------------------
 with tab4:
     st.header("📄 Procesar PDF del Proveedor y Ajustar Márgenes")
@@ -404,7 +413,7 @@ with tab4:
 
     st.markdown("---")
     st.subheader("📥 2. Cargar Lista en PDF del Proveedor")
-    st.info("📌 NOTA: Todos los productos leídos desde el PDF se crearán como 'Disponible en Proveedor' con 0 stock físico hasta que los compren.")
+    st.info("📌 NOTA: Todos los productos leídos del PDF se crean con 0 unidades en stock y estado 'Disponible en Proveedor'.")
     
     socio_destinatario = st.selectbox("Asignar estos perfumes al socio:", SOCIOS)
     uploaded_pdf = st.file_uploader("Sube el PDF enviado por tu proveedor", type=["pdf"])
@@ -454,7 +463,7 @@ with tab4:
 
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Sincronización completa! Se crearon {cargados} productos como 'Disponible en Proveedor' y se actualizaron {actualizados} precios.")
+                    st.success(f"¡Sincronización completa! Se crearon {cargados} productos con 0 unidades (Disponible en Proveedor) y se actualizaron {actualizados} precios.")
                     st.rerun()
             else:
                 st.warning("No se pudieron extraer precios automáticamente. Vista previa del texto extraído:")
@@ -533,7 +542,7 @@ with tab5:
         st.info("No hay productos para editar.")
 
 # ---------------------------------------------------------
-# TAB 6: Historial de Ventas y Gestión de Historial
+# TAB 6: Historial de Ventas
 # ---------------------------------------------------------
 with tab6:
     st.header("📜 Historial de Movimientos")

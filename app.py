@@ -5,6 +5,7 @@ from datetime import datetime
 import pypdf
 import re
 import io
+import urllib.parse
 
 # Librerías para generación de PDF profesional
 from reportlab.lib.pagesizes import letter
@@ -23,13 +24,20 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# DICCIONARIO DE SOCIOS Y CLAVES
+# DICCIONARIO DE SOCIOS, CLAVES Y WHATSAPP DIRECTOS
 # ---------------------------------------------------------
 USUARIOS_SOCIOS = {
     "Franco Navarrete": "41004368",
     "Sebastián Agüero": "38473626",
     "Tomás Cubillos": "95113521"
 }
+
+SOCIOS_WHATSAPP = {
+    "Franco Navarrete": "5492613350949",
+    "Sebastián Agüero": "5492615913895",
+    "Tomás Cubillos": "5492616621668"
+}
+
 SOCIOS = list(USUARIOS_SOCIOS.keys())
 ESTADOS = ["A pedido", "En Stock", "Pedido / Señado", "Agotado"]
 CLAVE_ADMIN_MASTER = "1234"
@@ -62,19 +70,19 @@ st.markdown("""
         color: #C5A059 !important;
     }
 
-    /* Tarjetas de Perfumes (Estilo Mobile) */
+    /* Tarjetas de Perfumes */
     .perfume-card {
         background-color: #291D1A;
         border: 1px solid #3D2B27;
         border-left: 4px solid #D4AF37;
         padding: 14px;
         border-radius: 8px;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     .perfume-title {
         color: #FFFFFF;
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         font-weight: 600;
         margin-bottom: 4px;
     }
@@ -88,13 +96,20 @@ st.markdown("""
         display: inline-block;
         margin-bottom: 8px;
     }
+    .perfume-notes {
+        color: #C5A059;
+        font-size: 0.85rem;
+        font-style: italic;
+        margin-top: 4px;
+        margin-bottom: 8px;
+    }
     .perfume-price {
         color: #E5C158;
         font-weight: bold;
-        font-size: 1rem;
+        font-size: 1.05rem;
     }
 
-    /* Botones */
+    /* Botones y WhatsApp */
     .stButton>button {
         background-color: #D4AF37 !important;
         color: #1C1412 !important;
@@ -108,6 +123,21 @@ st.markdown("""
     .stButton>button:hover {
         background-color: #E5C158 !important;
         box-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+    }
+    .btn-whatsapp {
+        display: block;
+        background-color: #25D366;
+        color: white !important;
+        text-align: center;
+        padding: 10px;
+        border-radius: 6px;
+        font-weight: bold;
+        text-decoration: none;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+    .btn-whatsapp:hover {
+        background-color: #1EBE57;
     }
 
     /* Sidebar / Menú Lateral */
@@ -146,9 +176,21 @@ def init_db():
             costo_usd REAL,
             margen_100ml_custom REAL,
             estado TEXT,
-            socio_asignado TEXT
+            socio_asignado TEXT,
+            notas_olfativas TEXT,
+            imagen_url TEXT
         )
     ''')
+    
+    try:
+        c.execute("ALTER TABLE stock ADD COLUMN notas_olfativas TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE stock ADD COLUMN imagen_url TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS historial (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -363,6 +405,7 @@ modo_acceso = st.sidebar.radio(
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     st.header("📖 Catálogo de Fragancias")
+
     df_cat_base = cargar_datos_stock()
     
     if not df_cat_base.empty:
@@ -380,6 +423,36 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base["precio_100ml"] = df_cat_base["costo_ars"] * (1 + (df_cat_base["margen_aplicado"] / 100))
         df_cat_base["precio_decant"] = ((df_cat_base["costo_ars"] * 0.10) + costo_envase) * (1 + (margen_dec_gen / 100))
 
+        # --- SELECCIÓN INTERACTIVA DE CONSULTA POR PERFUMES ---
+        st.subheader("💡 ¿Te interesa alguna fragancia?")
+        st.markdown("<small>Selecciona los perfumes sobre los que quieres consultar y luego presiona el botón del socio con quien desees hablar:</small>", unsafe_allow_html=True)
+        
+        perfumes_seleccionados = st.multiselect(
+            "Selecciona uno o varios perfumes para consultar:",
+            options=df_cat_base["nombre"].tolist(),
+            placeholder="Escribe o selecciona perfumes..."
+        )
+        
+        # Construcción del mensaje automático de WhatsApp
+        if perfumes_seleccionados:
+            lista_p_str = ", ".join(perfumes_seleccionados)
+            msg_texto = f"Hola! Estaba viendo el catálogo de STORIA PARFUMS y me gustaría consultar disponibilidad y precio sobre: {lista_p_str}."
+        else:
+            msg_texto = "Hola! Estaba viendo el catálogo web de STORIA PARFUMS y me gustaría hacerles una consulta."
+            
+        msg_encoded = urllib.parse.quote(msg_texto)
+
+        # Botones Directos de WhatsApp
+        col_w1, col_w2, col_w3 = st.columns(3)
+        with col_w1:
+            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded}" target="_blank" class="btn-whatsapp">💬 Consultar a Franco</a>', unsafe_allow_html=True)
+        with col_w2:
+            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded}" target="_blank" class="btn-whatsapp">💬 Consultar a Sebastián</a>', unsafe_allow_html=True)
+        with col_w3:
+            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded}" target="_blank" class="btn-whatsapp">💬 Consultar a Tomás</a>', unsafe_allow_html=True)
+
+        st.markdown("---")
+
         pdf_cat_bytes = generar_pdf_catalogo(df_cat_base)
         st.download_button(
             label="📥 Descargar Catálogo Completo (PDF)",
@@ -389,21 +462,31 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         )
         st.markdown("---")
         
-        busq_cli = st.text_input("🔍 Buscar perfume:", placeholder="Ej. Khamrah, Club de Nuit...")
+        busq_cli = st.text_input("🔍 Buscar perfume en el catálogo:", placeholder="Ej. Khamrah, Club de Nuit...")
         if busq_cli:
             df_cat_base = df_cat_base[df_cat_base["nombre"].astype(str).str.contains(busq_cli, case=False, na=False)]
 
         for _, r in df_cat_base.iterrows():
-            st.markdown(f"""
-            <div class="perfume-card">
-                <div class="perfume-title">{r['nombre']}</div>
-                <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']}</span>
-                <div style="margin-top: 6px;">
-                    <div>Frasco 100ml: <span class="perfume-price">${r['precio_100ml']:,.0f} ARS</span></div>
-                    <div>Decant 10ml: <span class="perfume-price">${r['precio_decant']:,.0f} ARS</span></div>
+            notas_html = f'<div class="perfume-notes">🌸 <b>Notas:</b> {r["notas_olfativas"]}</div>' if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
+            
+            col_card_1, col_card_2 = st.columns([1, 3])
+            with col_card_1:
+                if pd.notnull(r.get("imagen_url")) and str(r.get("imagen_url")).startswith("http"):
+                    st.image(r["imagen_url"], use_column_width=True)
+                else:
+                    st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
+            with col_card_2:
+                st.markdown(f"""
+                <div class="perfume-card">
+                    <div class="perfume-title">{r['nombre']}</div>
+                    <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']}</span>
+                    {notas_html}
+                    <div style="margin-top: 6px;">
+                        <div>Frasco 100ml: <span class="perfume-price">${r['precio_100ml']:,.0f} ARS</span></div>
+                        <div>Decant 10ml: <span class="perfume-price">${r['precio_decant']:,.0f} ARS</span></div>
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
     else:
         st.info("No hay fragancias disponibles en el catálogo.")
 
@@ -413,7 +496,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 else:
     st.sidebar.markdown("---")
     
-    # Formulario de inicio de sesión si no está autenticado
     if st.session_state.socio_autenticado is None:
         st.header("🔐 Ingreso de Socios")
         
@@ -430,7 +512,6 @@ else:
                 else:
                     st.error("❌ Contraseña incorrecta.")
     
-    # Si la clave es correcta, abre las funciones del administrador
     else:
         st.sidebar.success(f"👤 Socio: **{st.session_state.socio_autenticado}**")
         if st.sidebar.button("🚪 Cerrar Sesión"):
@@ -495,10 +576,12 @@ else:
 
                 if modo_vista == "📱 Tarjetas (Ideal Celular)":
                     for _, r in df.iterrows():
+                        notas_str = f"<div><b>Notas:</b> {r['notas_olfativas']}</div>" if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
                         st.markdown(f"""
                         <div class="perfume-card">
                             <div class="perfume-title">{r['nombre']}</div>
                             <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']} ({r['socio_asignado']})</span>
+                            {notas_str}
                             <div style="margin-top: 8px;">
                                 <div><b>100ml:</b> <span class="perfume-price">${r['precio_venta_100ml_ars']:,.0f} ARS</span> <small>({r['botellas_100ml_cerradas']} un)</small></div>
                                 <div><b>Decant 10ml:</b> <span class="perfume-price">${r['precio_venta_decant_10ml_ars']:,.0f} ARS</span> <small>({r['decants_10ml_preparados']} un / {r['ml_disponibles_abiertos']}ml ab.)</small></div>
@@ -632,6 +715,8 @@ else:
                 botellas = st.number_input("Botellas 100ml", min_value=0, value=1 if estado == "En Stock" else 0)
                 ml_abiertos = st.number_input("ml Abiertos", min_value=0, max_value=100, value=0)
                 decants = st.number_input("Decants 10ml", min_value=0, value=0)
+                notas_olfativas = st.text_input("Notas Olfativas (Opcional):", placeholder="Ej. Bergamota, Vainilla, Ámbar")
+                imagen_url = st.text_input("URL Imagen (Opcional):", placeholder="https://ejemplo.com/foto.jpg")
                 socio = st.selectbox("Socio a cargo", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
                 
                 if st.form_submit_button("Guardar Perfume"):
@@ -647,15 +732,16 @@ else:
                             c.execute('''
                                 UPDATE stock 
                                 SET tipo = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, 
-                                    decants_10ml_preparados = ?, costo_usd = ?, estado = ?, socio_asignado = ?
+                                    decants_10ml_preparados = ?, costo_usd = ?, estado = ?, socio_asignado = ?,
+                                    notas_olfativas = ?, imagen_url = ?
                                 WHERE id = ?
-                            ''', (tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio, encontrado_id))
+                            ''', (tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio, notas_olfativas, imagen_url, encontrado_id))
                             st.warning("Producto actualizado sin duplicar.")
                         else:
                             c.execute('''
-                                INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio))
+                                INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado, notas_olfativas, imagen_url)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio, notas_olfativas, imagen_url))
                             st.success("¡Perfume guardado!")
                             
                         conn.commit()
@@ -740,6 +826,13 @@ else:
                     nbot = st.number_input("100ml Cerradas", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
                     nml = st.number_input("ml Abiertos", min_value=0, max_value=100, value=int(prod_data['ml_disponibles_abiertos']))
                     ndec = st.number_input("Decants 10ml", min_value=0, value=int(prod_data['decants_10ml_preparados']))
+                    
+                    val_notas = prod_data['notas_olfativas'] if pd.notnull(prod_data.get('notas_olfativas')) else ""
+                    val_img = prod_data['imagen_url'] if pd.notnull(prod_data.get('imagen_url')) else ""
+                    
+                    nuevas_notas = st.text_input("Notas Olfativas", value=str(val_notas))
+                    nueva_img = st.text_input("URL Imagen", value=str(val_img))
+                    
                     nuevo_socio = st.selectbox("Socio a cargo", SOCIOS, index=SOCIOS.index(prod_data['socio_asignado']) if prod_data['socio_asignado'] in SOCIOS else 0)
 
                     if st.form_submit_button("Guardar Cambios"):
@@ -748,9 +841,10 @@ else:
                         c.execute('''
                             UPDATE stock
                             SET nombre = ?, tipo = ?, estado = ?, costo_usd = ?, margen_100ml_custom = ?,
-                                botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, socio_asignado = ?
+                                botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, 
+                                socio_asignado = ?, notas_olfativas = ?, imagen_url = ?
                             WHERE id = ?
-                        ''', (nuevo_nombre, nuevo_tipo, nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevo_socio, id_mod))
+                        ''', (nuevo_nombre, nuevo_tipo, nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevo_socio, nuevas_notas, nueva_img, id_mod))
                         conn.commit()
                         conn.close()
                         st.success("Guardado.")

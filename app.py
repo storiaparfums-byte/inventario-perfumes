@@ -614,7 +614,8 @@ else:
                         
                         socio_reserva_html = ""
                         if r['estado'] == "Pedido / Señado" and pd.notnull(r.get('socio_asignado')) and str(r.get('socio_asignado')).strip() != "":
-                            socio_reserva_html = f'<div style="color: #FF6B6B; font-weight: bold; margin-top: 4px; font-size: 0.85rem;">📌 RESERVADO / SEÑADO POR: {r["socio_asignado"]}</div>'
+                            cant_decants_res = r['decants_10ml_preparados'] if r['decants_10ml_preparados'] > 0 else 1
+                            socio_reserva_html = f'<div style="color: #FF6B6B; font-weight: bold; margin-top: 4px; font-size: 0.85rem;">📌 RESERVADO / SEÑADO POR: {r["socio_asignado"]} ({cant_decants_res} un. decant 10ml)</div>'
 
                         st.markdown(f"""
                         <div class="perfume-card">
@@ -633,7 +634,9 @@ else:
                     df_display = df.copy()
                     df_display["precio_100ml_formatted"] = df_display["precio_venta_100ml_ars"].apply(fmt_ars)
                     df_display["precio_10ml_formatted"] = df_display["precio_venta_decant_10ml_ars"].apply(fmt_ars)
-                    df_display["Reserva_Socio"] = df_display.apply(lambda row: row['socio_asignado'] if row['estado'] == "Pedido / Señado" else "-", axis=1)
+                    df_display["Reserva_Socio"] = df_display.apply(
+                        lambda row: f"{row['socio_asignado']} ({row['decants_10ml_preparados']} decants)" if row['estado'] == "Pedido / Señado" else "-", axis=1
+                    )
                     
                     df_display = df_display.rename(columns={
                         "id": "ID", "nombre": "Perfume", "tipo": "Tipo", "estado": "Estado",
@@ -814,12 +817,20 @@ else:
                 tipo = st.selectbox("Categoría (Opcional)", CATEGORIAS, index=0)
                 estado = st.selectbox("Estado inicial", ESTADOS)
                 costo_usd = st.number_input("Costo USD ($)", min_value=0.0, value=0.0, step=1.0)
-                botellas = st.number_input("Botellas 100ml", min_value=0, value=1 if estado == "En Stock" else 0)
-                ml_abiertos = st.number_input("ml Abiertos", min_value=0, max_value=100, value=0)
-                decants = st.number_input("Decants 10ml", min_value=0, value=0)
+                
+                col_st1, col_st2, col_st3 = st.columns(3)
+                with col_st1:
+                    botellas = st.number_input("Botellas 100ml Cerradas", min_value=0, value=1 if estado == "En Stock" else 0)
+                with col_st2:
+                    ml_abiertos = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=100, value=0)
+                with col_st3:
+                    decants = st.number_input("Cantidad Decants 10ml", min_value=0, value=0)
+                
+                st.markdown("---")
+                socio_reserva = st.selectbox("📌 Socio que lo tiene Señado / Reservado (Opcional):", [""] + SOCIOS)
+                
                 notas_olfativas = st.text_input("Notas Olfativas (Opcional):", placeholder="Ej. Bergamota, Vainilla, Ámbar")
                 imagen_url = st.text_input("URL Imagen (Opcional):", placeholder="https://ejemplo.com/foto.jpg")
-                socio_reserva = st.selectbox("Socio que lo tiene Señado / Reservado (Opcional):", [""] + SOCIOS)
                 
                 if st.form_submit_button("Guardar Perfume"):
                     if nombre.strip() != "":
@@ -911,7 +922,7 @@ else:
 
         # --- SECCIÓN: EDITAR / ELIMINAR ---
         elif seccion_admin == "✏️ Editar / Eliminar":
-            st.header("✏️ Editar Estado / Reserva de Perfumes")
+            st.header("✏️ Editar Estado, Stock & Reserva de Perfumes")
             df_mod = cargar_datos_stock()
 
             if not df_mod.empty:
@@ -928,17 +939,24 @@ else:
                     nuevo_tipo = st.selectbox("Tipo", CATEGORIAS, index=CATEGORIAS.index(val_tipo))
                     nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(prod_data['estado']) if prod_data['estado'] in ESTADOS else 0)
                     
-                    socio_reserva_sel = st.selectbox(
-                        "📌 Socio que lo tiene Señado / Reservado:",
-                        [""] + SOCIOS,
-                        index=([""] + SOCIOS).index(val_socio_reserva) if val_socio_reserva in SOCIOS else 0
-                    )
+                    col_ed_s1, col_ed_s2 = st.columns(2)
+                    with col_ed_s1:
+                        socio_reserva_sel = st.selectbox(
+                            "📌 Socio que lo tiene Señado / Reservado:",
+                            [""] + SOCIOS,
+                            index=([""] + SOCIOS).index(val_socio_reserva) if val_socio_reserva in SOCIOS else 0
+                        )
+                    with col_ed_s2:
+                        ndec = st.number_input("Cantidad Decants 10ml Señados / En Stock:", min_value=0, value=int(prod_data['decants_10ml_preparados']))
 
                     nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']))
                     nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))
-                    nbot = st.number_input("100ml Cerradas", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
-                    nml = st.number_input("ml Abiertos", min_value=0, max_value=100, value=int(prod_data['ml_disponibles_abiertos']))
-                    ndec = st.number_input("Decants 10ml", min_value=0, value=int(prod_data['decants_10ml_preparados']))
+                    
+                    col_ed_b1, col_ed_b2 = st.columns(2)
+                    with col_ed_b1:
+                        nbot = st.number_input("100ml Cerradas", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
+                    with col_ed_b2:
+                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=100, value=int(prod_data['ml_disponibles_abiertos']))
                     
                     val_notas = prod_data['notas_olfativas'] if pd.notnull(prod_data.get('notas_olfativas')) else ""
                     val_img = prod_data['imagen_url'] if pd.notnull(prod_data.get('imagen_url')) else ""

@@ -28,7 +28,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Tabla de Inventario con costo y margen
+    # Tabla de Inventario
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +42,12 @@ def init_db():
         )
     """)
     
+    # MIGRACIÓN AUTOMÁTICA: Si la tabla ya existía sin costo_usd, se la agregamos
+    cursor.execute("PRAGMA table_info(stock)")
+    columnas = [col[1] for col in cursor.fetchall()]
+    if "costo_usd" not in columnas:
+        cursor.execute("ALTER TABLE stock ADD COLUMN costo_usd REAL DEFAULT 0.0")
+    
     # Tabla de Configuración de Precios / Cotización
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config_precios (
@@ -53,7 +59,6 @@ def init_db():
         )
     """)
     
-    # Insertar valores por defecto en config si no existen
     cursor.execute("INSERT OR IGNORE INTO config_precios (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars) VALUES (1, 1200.0, 30.0, 100.0, 800.0)")
     
     # Tabla de Historial
@@ -97,7 +102,6 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📜 Historial"
 ])
 
-# Obtener parámetros de precios actuales
 dolar_hoy, margen_100, margen_dec, costo_envase = obtener_config()
 
 # ---------------------------------------------------------
@@ -106,7 +110,6 @@ dolar_hoy, margen_100, margen_dec, costo_envase = obtener_config()
 with tab1:
     st.header("Inventario Global y Precios de Venta")
     
-    # Mostrar parámetros actuales
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
         st.metric("Cotización Dólar", f"${dolar_hoy:,.0f} ARS")
@@ -122,14 +125,14 @@ with tab1:
     conn.close()
 
     if not df.empty:
-        # Cálculos de Precios
-        # Costo 100ml en ARS
+        # Asegurar tipo de dato numérico
+        if "costo_usd" not in df.columns:
+            df["costo_usd"] = 0.0
+        df["costo_usd"] = df["costo_usd"].fillna(0.0)
+
         df["costo_100ml_ars"] = df["costo_usd"] * dolar_hoy
-        # Precio Venta 100ml ARS
         df["precio_venta_100ml_ars"] = df["costo_100ml_ars"] * (1 + (margen_100 / 100))
-        # Costo líquido de 10ml ARS (10% del costo del frasco de 100ml)
         costo_liquido_10ml = df["costo_100ml_ars"] * 0.10
-        # Precio Venta Decant 10ml ARS
         df["precio_venta_decant_10ml_ars"] = (costo_liquido_10ml + costo_envase) * (1 + (margen_dec / 100))
 
         df_display = df.rename(columns={
@@ -145,7 +148,6 @@ with tab1:
             "socio_asignado": "Socio a Cargo"
         })
 
-        # Formato de moneda
         df_display["Costo USD"] = df_display["Costo USD"].apply(lambda x: f"${x:,.2f} USD")
         df_display["Precio 100ml (ARS)"] = df_display["Precio 100ml (ARS)"].apply(lambda x: f"${x:,.0f} ARS")
         df_display["Precio Decant 10ml (ARS)"] = df_display["Precio Decant 10ml (ARS)"].apply(lambda x: f"${x:,.0f} ARS")
@@ -336,17 +338,15 @@ with tab4:
             for page in reader.pages:
                 texto_completo += page.extract_text() + "\n"
 
-            # Búsqueda rápida de perfume y precio con expresión regular (Patrón: Nombre seguido de $XX o XX USD)
             lineas = texto_completo.split("\n")
             items_encontrados = []
 
             for linea in lineas:
-                # Buscar patrones comunes de precios (ej. "Afnan Club de Nuit $45" o "Hawas 55.00")
                 match = re.search(r'([A-Za-z0-9\s\-\']+?)\s+\$?(\d+[\.\,]?\d*)', linea)
                 if match:
                     prod_nombre = match.group(1).strip()
                     prod_precio = float(match.group(2).replace(",", "."))
-                    if len(prod_nombre) > 3 and prod_precio > 5: # Filtro básico
+                    if len(prod_nombre) > 3 and prod_precio > 5:
                         items_encontrados.append({"Perfume Detectado": prod_nombre, "Costo USD": prod_precio})
 
             if items_encontrados:
@@ -354,7 +354,7 @@ with tab4:
                 st.write(f"Se detectaron **{len(df_pdf)}** perfumes con precio en el PDF:")
                 st.dataframe(df_pdf, use_container_width=True)
 
-                st.info("Para vincular estos costos con tu inventario actual, asegúrate de que el nombre coincida o edítalo desde la pestaña 'Editar / Eliminar'.")
+                st.info("Para vincular estos costos con tu inventario actual, puedes asignar el costo a cada producto desde la pestaña 'Editar / Eliminar'.")
             else:
                 st.warning("No se detectaron precios automáticos con formato estándar. Mostrando vista previa del texto del PDF:")
                 st.text_area("Texto extraído del PDF:", texto_completo, height=300)
@@ -382,7 +382,8 @@ with tab5:
         with st.form("form_edicion"):
             nuevo_nombre = st.text_input("Nombre del Perfume", value=prod_data['nombre'])
             nuevo_tipo = st.selectbox("Tipo", ["Árabe", "Diseñador"], index=0 if prod_data['tipo'] == "Árabe" else 1)
-            nuevo_costo = st.number_input("Costo USD ($)", min_value=0.0, value=float(prod_data['costo_usd']), step=1.0)
+            costo_val = float(prod_data['costo_usd']) if 'costo_usd' in prod_data and pd.notnull(prod_data['costo_usd']) else 0.0
+            nuevo_costo = st.number_input("Costo USD ($)", min_value=0.0, value=costo_val, step=1.0)
             
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -392,7 +393,8 @@ with tab5:
             with c3:
                 nuevos_decants = st.number_input("Decants 10ml", min_value=0, value=int(prod_data['decants_10ml_preparados']))
 
-            nuevo_socio = st.selectbox("Socio a Cargo", SOCIOS, index=SOCIOS.index(prod_data['socio_asignado']) if prod_data['socio_asignado'] in SOCIOS else 0)
+            socio_val = prod_data['socio_asignado'] if prod_data['socio_asignado'] in SOCIOS else SOCIOS[0]
+            nuevo_socio = st.selectbox("Socio a Cargo", SOCIOS, index=SOCIOS.index(socio_val))
 
             guardar_cambios = st.form_submit_button("Guardar Cambios")
 
@@ -432,6 +434,9 @@ with tab6:
     conn.close()
 
     if not df_historial.empty:
+        st.dataframe(df_historial, use_container_width=True)
+    else:
+        st.info("Aún no hay movimientos registrados.")
         st.dataframe(df_historial, use_container_width=True)
     else:
         st.info("Aún no hay movimientos registrados.")

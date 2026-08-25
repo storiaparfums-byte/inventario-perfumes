@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
 from datetime import datetime
 import pypdf
 import re
 import io
-from streamlit_gsheets import GSheetsConnection
 
 # Librerías para generación de PDF profesional
 from reportlab.lib.pagesizes import letter
@@ -26,60 +26,82 @@ ESTADOS = ["A pedido", "En Stock", "Pedido / Señado", "Agotado"]
 CLAVE_ADMIN = "1234"
 
 # ---------------------------------------------------------
-# Conexión Persistente con Google Sheets
+# Base de datos SQLite Local
 # ---------------------------------------------------------
-conn = st.connection("gsheets", type=GSheetsConnection)
+def init_db():
+    conn = sqlite3.connect('inventario.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS stock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE,
+            tipo TEXT,
+            botellas_100ml_cerradas INTEGER,
+            ml_disponibles_abiertos INTEGER,
+            decants_10ml_preparados INTEGER,
+            costo_usd REAL,
+            margen_100ml_custom REAL,
+            estado TEXT,
+            socio_asignado TEXT
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS historial (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT,
+            perfume TEXT,
+            socio TEXT,
+            tipo_movimiento TEXT
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            cotizacion_dolar REAL,
+            margen_100ml REAL,
+            margen_decant REAL,
+            costo_envase_decant_ars REAL
+        )
+    ''')
+    c.execute('''
+        INSERT OR IGNORE INTO config (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars)
+        VALUES (1, 1200.0, 30.0, 100.0, 800.0)
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 def cargar_datos_stock():
-    try:
-        df = conn.read(worksheet="stock", ttl=0)
-        if df.empty:
-            return pd.DataFrame(columns=[
-                "id", "nombre", "tipo", "botellas_100ml_cerradas", 
-                "ml_disponibles_abiertos", "decants_10ml_preparados", 
-                "costo_usd", "margen_100ml_custom", "estado", "socio_asignado"
-            ])
-        return df
-    except Exception:
-        return pd.DataFrame(columns=[
-            "id", "nombre", "tipo", "botellas_100ml_cerradas", 
-            "ml_disponibles_abiertos", "decants_10ml_preparados", 
-            "costo_usd", "margen_100ml_custom", "estado", "socio_asignado"
-        ])
-
-def guardar_datos_stock(df):
-    conn.update(worksheet="stock", data=df)
+    conn = sqlite3.connect('inventario.db')
+    df = pd.read_sql_query("SELECT * FROM stock", conn)
+    conn.close()
+    return df
 
 def cargar_historial():
-    try:
-        df = conn.read(worksheet="historial", ttl=0)
-        if df.empty:
-            return pd.DataFrame(columns=["id", "fecha", "perfume", "socio", "tipo_movimiento"])
-        return df
-    except Exception:
-        return pd.DataFrame(columns=["id", "fecha", "perfume", "socio", "tipo_movimiento"])
-
-def guardar_historial(df):
-    conn.update(worksheet="historial", data=df)
+    conn = sqlite3.connect('inventario.db')
+    df = pd.read_sql_query("SELECT * FROM historial ORDER BY id DESC", conn)
+    conn.close()
+    return df
 
 def cargar_config():
-    try:
-        df = conn.read(worksheet="config", ttl=0)
-        if not df.empty:
-            row = df.iloc[0]
-            return float(row["cotizacion_dolar"]), float(row["margen_100ml"]), float(row["margen_decant"]), float(row["costo_envase_decant_ars"])
-    except Exception:
-        pass
-    return 1200.0, 30.0, 100.0, 800.0
+    conn = sqlite3.connect('inventario.db')
+    c = conn.cursor()
+    c.execute("SELECT cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars FROM config WHERE id = 1")
+    res = c.fetchone()
+    conn.close()
+    return res if res else (1200.0, 30.0, 100.0, 800.0)
 
 def guardar_config(dolar, m100, mdec, envase):
-    df = pd.DataFrame([{
-        "cotizacion_dolar": dolar,
-        "margen_100ml": m100,
-        "margen_decant": mdec,
-        "costo_envase_decant_ars": envase
-    }])
-    conn.update(worksheet="config", data=df)
+    conn = sqlite3.connect('inventario.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE config 
+        SET cotizacion_dolar = ?, margen_100ml = ?, margen_decant = ?, costo_envase_decant_ars = ?
+        WHERE id = 1
+    ''', (dolar, m100, mdec, envase))
+    conn.commit()
+    conn.close()
 
 # ---------------------------------------------------------
 # Funciones Auxiliares
@@ -451,9 +473,12 @@ with tab4:
             exito = False
             fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+            conn = sqlite3.connect('inventario.db')
+            c = conn.cursor()
+
             if tipo_operacion == "Venta de Botella 100ml (Cerrada)":
                 if botellas > 0:
-                    df_actual.loc[row_idx, 'botellas_100ml_cerradas'] = botellas - 1
+                    c.execute("UPDATE stock SET botellas_100ml_cerradas = ? WHERE id = ?", (botellas - 1, id_producto))
                     st.success("Se descontó 1 botella cerrada de 100ml.")
                     exito = True
                 else:
@@ -461,7 +486,7 @@ with tab4:
 
             elif tipo_operacion == "Venta de Decant 10ml (Listo)":
                 if decants > 0:
-                    df_actual.loc[row_idx, 'decants_10ml_preparados'] = decants - 1
+                    c.execute("UPDATE stock SET decants_10ml_preparados = ? WHERE id = ?", (decants - 1, id_producto))
                     st.success("Se descontó 1 decant listo de 10ml.")
                     exito = True
                 else:
@@ -469,30 +494,24 @@ with tab4:
 
             elif tipo_operacion == "Descontar 10ml de frasco abierto (en uso)":
                 if ml >= 10:
-                    df_actual.loc[row_idx, 'ml_disponibles_abiertos'] = ml - 10
+                    c.execute("UPDATE stock SET ml_disponibles_abiertos = ? WHERE id = ?", (ml - 10, id_producto))
                     st.success("Se descontaron 10ml del frasco abierto.")
                     exito = True
                 elif botellas > 0:
-                    df_actual.loc[row_idx, 'botellas_100ml_cerradas'] = botellas - 1
-                    df_actual.loc[row_idx, 'ml_disponibles_abiertos'] = ml + 90
+                    c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ? WHERE id = ?", (botellas - 1, ml + 90, id_producto))
                     st.warning("Se abrió una botella de 100ml y se descontaron 10ml.")
                     exito = True
                 else:
                     st.error("Sin mililitros ni frascos cerrados.")
 
             if exito:
-                guardar_datos_stock(df_actual)
-                df_hist = cargar_historial()
-                nuevo_hist_id = int(df_hist['id'].max() + 1) if not df_hist.empty and pd.notnull(df_hist['id'].max()) else 1
-                df_nuevo_hist = pd.DataFrame([{
-                    "id": nuevo_hist_id,
-                    "fecha": fecha_actual,
-                    "perfume": nombre_p,
-                    "socio": socio_realiza_venta,
-                    "tipo_movimiento": tipo_operacion
-                }])
-                guardar_historial(pd.concat([df_hist, df_nuevo_hist], ignore_index=True))
+                c.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento) VALUES (?, ?, ?, ?)",
+                          (fecha_actual, nombre_p, socio_realiza_venta, tipo_operacion))
+                conn.commit()
+                conn.close()
                 st.rerun()
+            else:
+                conn.close()
 
 # ---------------------------------------------------------
 # TAB 5: Agregar perfume nuevo
@@ -518,23 +537,19 @@ with tab5:
 
         if guardar:
             if nombre.strip() != "":
-                df_actual = cargar_datos_stock()
-                nuevo_id = int(df_actual['id'].max() + 1) if not df_actual.empty and pd.notnull(df_actual['id'].max()) else 1
-                nuevo_row = pd.DataFrame([{
-                    "id": nuevo_id,
-                    "nombre": nombre.strip(),
-                    "tipo": tipo,
-                    "botellas_100ml_cerradas": botellas,
-                    "ml_disponibles_abiertos": ml_abiertos,
-                    "decants_10ml_preparados": decants,
-                    "costo_usd": costo_usd,
-                    "margen_100ml_custom": None,
-                    "estado": estado,
-                    "socio_asignado": socio
-                }])
-                guardar_datos_stock(pd.concat([df_actual, nuevo_row], ignore_index=True))
-                st.success("¡Producto cargado en Google Sheets!")
-                st.rerun()
+                try:
+                    conn = sqlite3.connect('inventario.db')
+                    c = conn.cursor()
+                    c.execute('''
+                        INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio))
+                    conn.commit()
+                    conn.close()
+                    st.success("¡Producto cargado correctamente!")
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error("Ya existe un perfume registrado con ese nombre.")
 
 # ---------------------------------------------------------
 # TAB 6: Importación de PDF Proveedor
@@ -576,33 +591,26 @@ with tab6:
                 st.write(f"Se detectaron **{len(df_pdf)}** perfumes:")
                 st.dataframe(df_pdf, use_container_width=True)
 
-                if st.button("🚀 Sincronizar catálogo del PDF con Google Sheets", type="primary"):
-                    df_actual = cargar_datos_stock()
+                if st.button("🚀 Sincronizar catálogo del PDF", type="primary"):
+                    conn = sqlite3.connect('inventario.db')
+                    c = conn.cursor()
                     cargados, actualizados = 0, 0
                     
                     for _, r in df_pdf.iterrows():
-                        mask = df_actual['nombre'].astype(str).str.lower() == r['nombre'].lower()
-                        if mask.any():
-                            df_actual.loc[mask, 'costo_usd'] = r['costo_usd']
+                        c.execute("SELECT id FROM stock WHERE LOWER(nombre) = LOWER(?)", (r['nombre'],))
+                        existe = c.fetchone()
+                        if existe:
+                            c.execute("UPDATE stock SET costo_usd = ? WHERE id = ?", (r['costo_usd'], existe[0]))
                             actualizados += 1
                         else:
-                            nuevo_id = int(df_actual['id'].max() + 1) if not df_actual.empty and pd.notnull(df_actual['id'].max()) else 1
-                            nuevo_p = pd.DataFrame([{
-                                "id": nuevo_id,
-                                "nombre": r['nombre'],
-                                "tipo": "Árabe",
-                                "botellas_100ml_cerradas": 0,
-                                "ml_disponibles_abiertos": 0,
-                                "decants_10ml_preparados": 0,
-                                "costo_usd": r['costo_usd'],
-                                "margen_100ml_custom": None,
-                                "estado": "A pedido",
-                                "socio_asignado": socio_dest
-                            }])
-                            df_actual = pd.concat([df_actual, nuevo_p], ignore_index=True)
+                            c.execute('''
+                                INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                                VALUES (?, 'Árabe', 0, 0, 0, ?, 'A pedido', ?)
+                            ''', (r['nombre'], r['costo_usd'], socio_dest))
                             cargados += 1
                             
-                    guardar_datos_stock(df_actual)
+                    conn.commit()
+                    conn.close()
                     st.success(f"¡Sincronizado! {cargados} creados y {actualizados} actualizados.")
                     st.rerun()
         except Exception as e:
@@ -641,18 +649,17 @@ with tab7:
             nuevo_socio = st.selectbox("Socio a cargo", SOCIOS, index=SOCIOS.index(prod_data['socio_asignado']) if prod_data['socio_asignado'] in SOCIOS else 0)
 
             if st.form_submit_button("Guardar Cambios"):
-                df_mod.loc[row_idx, 'nombre'] = nuevo_nombre
-                df_mod.loc[row_idx, 'tipo'] = nuevo_tipo
-                df_mod.loc[row_idx, 'estado'] = nuevo_estado
-                df_mod.loc[row_idx, 'costo_usd'] = nuevo_costo
-                df_mod.loc[row_idx, 'margen_100ml_custom'] = nuevo_margen
-                df_mod.loc[row_idx, 'botellas_100ml_cerradas'] = nbot
-                df_mod.loc[row_idx, 'ml_disponibles_abiertos'] = nml
-                df_mod.loc[row_idx, 'decants_10ml_preparados'] = ndec
-                df_mod.loc[row_idx, 'socio_asignado'] = nuevo_socio
-                
-                guardar_datos_stock(df_mod)
-                st.success("¡Producto actualizado en Google Sheets!")
+                conn = sqlite3.connect('inventario.db')
+                c = conn.cursor()
+                c.execute('''
+                    UPDATE stock
+                    SET nombre = ?, tipo = ?, estado = ?, costo_usd = ?, margen_100ml_custom = ?,
+                        botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, socio_asignado = ?
+                    WHERE id = ?
+                ''', (nuevo_nombre, nuevo_tipo, nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevo_socio, id_mod))
+                conn.commit()
+                conn.close()
+                st.success("¡Producto actualizado!")
                 st.rerun()
 
     st.markdown("---")
@@ -660,12 +667,11 @@ with tab7:
     clave_inv_input = st.text_input("🔑 Clave de Administrador:", type="password", key="pwd_inv")
     if st.button("🚨 VACIAR CATALOGO Y STOCK COMPLETO", type="primary"):
         if clave_inv_input == CLAVE_ADMIN:
-            df_vacio = pd.DataFrame(columns=[
-                "id", "nombre", "tipo", "botellas_100ml_cerradas", 
-                "ml_disponibles_abiertos", "decants_10ml_preparados", 
-                "costo_usd", "margen_100ml_custom", "estado", "socio_asignado"
-            ])
-            guardar_datos_stock(df_vacio)
+            conn = sqlite3.connect('inventario.db')
+            c = conn.cursor()
+            c.execute("DELETE FROM stock")
+            conn.commit()
+            conn.close()
             st.success("¡Catálogo vaciado completamente!")
             st.rerun()
         else:
@@ -691,8 +697,11 @@ with tab8:
         with c1:
             if st.button("❌ Eliminar Registro Seleccionado"):
                 if clave_hist == CLAVE_ADMIN:
-                    df_hist = df_hist[df_hist['id'] != id_h_del]
-                    guardar_historial(df_hist)
+                    conn = sqlite3.connect('inventario.db')
+                    c = conn.cursor()
+                    c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
+                    conn.commit()
+                    conn.close()
                     st.success("Registro eliminado.")
                     st.rerun()
                 else:
@@ -700,8 +709,11 @@ with tab8:
         with c2:
             if st.button("🚨 VACIAR HISTORIAL COMPLETO", type="secondary"):
                 if clave_hist == CLAVE_ADMIN:
-                    df_vacio_h = pd.DataFrame(columns=["id", "fecha", "perfume", "socio", "tipo_movimiento"])
-                    guardar_historial(df_vacio_h)
+                    conn = sqlite3.connect('inventario.db')
+                    c = conn.cursor()
+                    c.execute("DELETE FROM historial")
+                    conn.commit()
+                    conn.close()
                     st.warning("Historial vaciado.")
                     st.rerun()
                 else:

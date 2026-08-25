@@ -513,17 +513,8 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 else:
                     st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:
-                st.markdown(f"""
-                <div class="perfume-card">
-                    <div class="perfume-title">{r['nombre']}</div>
-                    <span class="{estado_class}">{r['estado']}</span>{tipo_html}
-                    {notas_html}
-                    <div style="margin-top: 6px;">
-                        <div>Frasco 100ml: <span class="perfume-price">{p_100ml_str}</span></div>
-                        <div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span></div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                card_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="{estado_class}">{r["estado"]}</span>{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco 100ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span></div></div></div>'
+                st.markdown(card_html, unsafe_allow_html=True)
     else:
         st.info("No hay fragancias disponibles en el catálogo.")
 
@@ -615,21 +606,10 @@ else:
                         socio_reserva_html = ""
                         if r['estado'] == "Pedido / Señado" and pd.notnull(r.get('socio_asignado')) and str(r.get('socio_asignado')).strip() != "":
                             cant_decants_res = r['decants_10ml_preparados'] if r['decants_10ml_preparados'] > 0 else 1
-                            socio_reserva_html = f'<div style="color: #FF6B6B; font-weight: bold; margin-top: 4px; font-size: 0.85rem;">📌 RESERVADO / SEÑADO POR: {r["socio_asignado"]} ({cant_decants_res} un. decant 10ml)</div>'
+                            socio_reserva_html = f'<div style="color: #FF6B6B; font-weight: bold; margin-top: 4px; font-size: 0.85rem;">📌 RESERVADO / SEÑADO POR: {r["socio_asignado"]} ({cant_decants_res} decant/s)</div>'
 
-                        st.markdown(f"""
-                        <div class="perfume-card">
-                            <div class="perfume-title">{r['nombre']}</div>
-                            <span class="perfume-badge">{r['estado']}</span>{tipo_str}
-                            {socio_reserva_html}
-                            {notas_str}
-                            <div style="margin-top: 8px;">
-                                <div><b>100ml:</b> <span class="perfume-price">{p_100_card}</span> <small>({r['botellas_100ml_cerradas']} un)</small></div>
-                                <div><b>Decant 10ml:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r['decants_10ml_preparados']} un / {r['ml_disponibles_abiertos']}ml ab.)</small></div>
-                                <div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r['costo_usd']:.2f}</div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{socio_reserva_html}{notas_str}<div style="margin-top: 8px;"><div><b>100ml:</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decant 10ml:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un / {r["ml_disponibles_abiertos"]}ml ab.)</small></div><div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
+                        st.markdown(card_admin_html, unsafe_allow_html=True)
                 else:
                     df_display = df.copy()
                     df_display["precio_100ml_formatted"] = df_display["precio_venta_100ml_ars"].apply(fmt_ars)

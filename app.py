@@ -16,13 +16,13 @@ from reportlab.lib import colors
 # Configuración inicial de la página
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Control de Stock & Precios - S&F Perfumes",
+    page_title="STORIA PARFUMS - Stock & Precios",
     page_icon="🧪",
     layout="wide"
 )
 
 SOCIOS = ["Sebastián", "Franco", "Tomás"]
-ESTADOS = ["Disponible en Proveedor", "En Stock", "Pedido / Señado", "Agotado"]
+ESTADOS = ["A pedido", "En Stock", "Pedido / Señado", "Agotado"]
 CLAVE_ADMIN = "1234"
 
 # ---------------------------------------------------------
@@ -46,7 +46,7 @@ def init_db():
             decants_10ml_preparados INTEGER DEFAULT 0,
             costo_usd REAL DEFAULT 0.0,
             margen_100ml_custom REAL DEFAULT NULL,
-            estado TEXT DEFAULT 'Disponible en Proveedor',
+            estado TEXT DEFAULT 'A pedido',
             socio_asignado TEXT NOT NULL
         )
     """)
@@ -58,7 +58,7 @@ def init_db():
     if "margen_100ml_custom" not in columnas:
         cursor.execute("ALTER TABLE stock ADD COLUMN margen_100ml_custom REAL DEFAULT NULL")
     if "estado" not in columnas:
-        cursor.execute("ALTER TABLE stock ADD COLUMN estado TEXT DEFAULT 'Disponible en Proveedor'")
+        cursor.execute("ALTER TABLE stock ADD COLUMN estado TEXT DEFAULT 'A pedido'")
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config_precios (
@@ -134,14 +134,14 @@ def generar_pdf_catalogo(df_cat):
     story = []
     
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor("#1E293B"), alignment=1)
-    subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=10, leading=12, textColor=colors.HexColor("#64748B"), alignment=1)
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, leading=26, textColor=colors.HexColor("#0F172A"), alignment=1)
+    subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=11, leading=14, textColor=colors.HexColor("#64748B"), alignment=1)
     
-    story.append(Paragraph("🧪 S&F PERFUMES & DECANTS", title_style))
-    story.append(Paragraph("Catálogo Oficial de Precios al Público", subtitle_style))
+    story.append(Paragraph("✨ STORIA PARFUMS ✨", title_style))
+    story.append(Paragraph("Catálogo de Perfumes de Diseñador y Árabes", subtitle_style))
     story.append(Spacer(1, 15))
     
-    data = [["Perfume", "Tipo", "Estado", "100 ml (ARS)", "Decant 10 ml (ARS)"]]
+    data = [["Perfume", "Tipo", "Disponibilidad", "100 ml (ARS)", "Decant 10 ml (ARS)"]]
     for _, row in df_cat.iterrows():
         data.append([
             row["nombre"],
@@ -179,7 +179,7 @@ def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, leading=26, textColor=colors.HexColor("#0F172A"))
     meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor("#475569"))
     
-    story.append(Paragraph("🧪 S&F PERFUMES", title_style))
+    story.append(Paragraph("✨ STORIA PARFUMS ✨", title_style))
     story.append(Spacer(1, 5))
     story.append(Paragraph(f"<b>Presupuesto para:</b> {cliente}", meta_style))
     story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
@@ -231,7 +231,7 @@ def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
 # ---------------------------------------------------------
 # Interfaz Gráfica (Pestañas)
 # ---------------------------------------------------------
-st.title("🧪 Perfumes & Decants - S&F Perfumes")
+st.title("✨ STORIA PARFUMS - Control de Stock & Precios")
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📦 Stock & Precios", 
@@ -267,7 +267,7 @@ with tab1:
 
     if not df.empty:
         df["costo_usd"] = df["costo_usd"].fillna(0.0)
-        df["estado"] = df["estado"].fillna("Disponible en Proveedor")
+        df["estado"] = df["estado"].replace("Disponible en Proveedor", "A pedido").fillna("A pedido")
         df["margen_aplicado"] = df["margen_100ml_custom"].fillna(margen_100_gen)
         
         df["costo_100ml_ars"] = df["costo_usd"] * dolar_hoy
@@ -328,14 +328,21 @@ with tab1:
 # TAB 2: Catálogo Público para Clientes + Descarga PDF
 # ---------------------------------------------------------
 with tab2:
-    st.header("📖 Catálogo Público de Precios")
-    st.markdown("Lista limpia sin información interna de costos, lista para compartir con tus clientes.")
+    st.header("📖 Catálogo Público STORIA PARFUMS")
+    st.markdown("Lista limpia para compartir con clientes. Los productos **En Stock** aparecen primero.")
     
     conn = get_connection()
-    df_cat_base = pd.read_sql_query("SELECT nombre, tipo, estado, costo_usd, margen_100ml_custom FROM stock WHERE estado IN ('En Stock', 'Disponible en Proveedor')", conn)
+    df_cat_base = pd.read_sql_query("SELECT nombre, tipo, estado, costo_usd, margen_100ml_custom FROM stock WHERE estado IN ('En Stock', 'A pedido', 'Disponible en Proveedor')", conn)
     conn.close()
     
     if not df_cat_base.empty:
+        # Reemplazar la etiqueta antigua por "A pedido"
+        df_cat_base["estado"] = df_cat_base["estado"].replace("Disponible en Proveedor", "A pedido")
+        
+        # Ordenar: 'En Stock' primero
+        df_cat_base["orden"] = df_cat_base["estado"].apply(lambda x: 0 if x == "En Stock" else 1)
+        df_cat_base = df_cat_base.sort_values(by=["orden", "nombre"]).drop(columns=["orden"])
+
         df_cat_base["costo_usd"] = df_cat_base["costo_usd"].fillna(0.0)
         df_cat_base["margen_aplicado"] = df_cat_base["margen_100ml_custom"].fillna(margen_100_gen)
         
@@ -345,9 +352,9 @@ with tab2:
 
         pdf_cat_bytes = generar_pdf_catalogo(df_cat_base)
         st.download_button(
-            label="📥 Descargar Catálogo Completo en PDF",
+            label="📥 Descargar Catálogo Completo STORIA PARFUMS (PDF)",
             data=pdf_cat_bytes,
-            file_name=f"Catalogo_Perfumes_{datetime.now().strftime('%d_%m_%Y')}.pdf",
+            file_name=f"Catalogo_Storia_Parfums_{datetime.now().strftime('%d_%m_%Y')}.pdf",
             mime="application/pdf",
             type="primary"
         )
@@ -371,7 +378,7 @@ with tab2:
 # TAB 3: Crear Presupuesto Personalizado + PDF
 # ---------------------------------------------------------
 with tab3:
-    st.header("📋 Generador de Presupuestos para Clientes")
+    st.header("📋 Generador de Presupuestos STORIA PARFUMS")
     
     nombre_cliente = st.text_input("Nombre del Cliente / Contacto:", value="Cliente")
     
@@ -428,9 +435,9 @@ with tab3:
             with col_b1:
                 pdf_pres_bytes = generar_pdf_presupuesto(nombre_cliente, st.session_state.items_presupuesto, subtotal_pres, monto_desc_pres, total_pres)
                 st.download_button(
-                    label="📄 Descargar Presupuesto en PDF",
+                    label="📄 Descargar Presupuesto STORIA PARFUMS (PDF)",
                     data=pdf_pres_bytes,
-                    file_name=f"Presupuesto_{nombre_cliente.replace(' ', '_')}.pdf",
+                    file_name=f"Presupuesto_Storia_{nombre_cliente.replace(' ', '_')}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
@@ -588,11 +595,11 @@ with tab6:
                             cursor.execute("UPDATE stock SET costo_usd = ? WHERE id = ?", (r['costo_usd'], ex[0]))
                             actualizados += 1
                         else:
-                            cursor.execute("INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado) VALUES (?, 'Árabe', 0, 0, 0, ?, 'Disponible en Proveedor', ?)", (r['nombre'], r['costo_usd'], socio_dest))
+                            cursor.execute("INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado) VALUES (?, 'Árabe', 0, 0, 0, ?, 'A pedido', ?)", (r['nombre'], r['costo_usd'], socio_dest))
                             cargados += 1
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Sincronizado! {cargados} creados con 0 unidades y {actualizados} actualizados.")
+                    st.success(f"¡Sincronizado! {cargados} creados como 'A pedido' y {actualizados} actualizados.")
                     st.rerun()
         except Exception as e:
             st.error(f"Error procesando PDF: {e}")
@@ -607,7 +614,8 @@ with tab7:
     conn.close()
 
     if not df_mod.empty:
-        opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'Disponible en Proveedor')}]" for _, row in df_mod.iterrows()]
+        df_mod["estado"] = df_mod["estado"].replace("Disponible en Proveedor", "A pedido")
+        opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'A pedido')}]" for _, row in df_mod.iterrows()]
         prod_sel = st.selectbox("Selecciona producto a modificar:", opciones_mod)
         id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
         prod_data = df_mod[df_mod['id'] == id_mod].iloc[0]

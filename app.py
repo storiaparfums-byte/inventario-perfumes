@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# DICCIONARIO DE SOCIOS Y CLAVES (DNI)
+# DICCIONARIO DE SOCIOS Y CLAVES
 # ---------------------------------------------------------
 USUARIOS_SOCIOS = {
     "Franco Navarrete": "41004368",
@@ -408,7 +408,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         st.info("No hay fragancias disponibles en el catálogo.")
 
 # ---------------------------------------------------------
-# MODO 2: PANEL DE ADMINISTRADOR (RESTRINGIDO CON CLAVE DNI)
+# MODO 2: PANEL DE ADMINISTRADOR (RESTRINGIDO CON CONTRASEÑA)
 # ---------------------------------------------------------
 else:
     st.sidebar.markdown("---")
@@ -419,16 +419,16 @@ else:
         
         with st.form("login_form"):
             socio_ingresado = st.selectbox("Selecciona Socio / Usuario:", SOCIOS)
-            clave_dni = st.text_input("Ingresa tu DNI (Contraseña):", type="password")
+            clave_ingresada = st.text_input("Ingresa tu Contraseña:", type="password")
             btn_login = st.form_submit_button("Ingresar")
             
             if btn_login:
-                if clave_dni == USUARIOS_SOCIOS.get(socio_ingresado):
+                if clave_ingresada == USUARIOS_SOCIOS.get(socio_ingresado):
                     st.session_state.socio_autenticado = socio_ingresado
                     st.success(f"Bienvenido {socio_ingresado}")
                     st.rerun()
                 else:
-                    st.error("❌ Clave DNI incorrecta.")
+                    st.error("❌ Contraseña incorrecta.")
     
     # Si la clave es correcta, abre las funciones del administrador
     else:

@@ -14,9 +14,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# 💡 NOMBRES REALES DE LOS SOCIOS Y ESTADOS
+# 💡 CONFIGURACIÓN DE NOMBRES Y SEGURIDAD
 SOCIOS = ["Sebastián", "Franco", "Tomás"]
 ESTADOS = ["Disponible en Proveedor", "En Stock", "Pedido / Señado", "Agotado"]
+CLAVE_ADMIN = "1234"  # 🔑 Cambia "1234" por la contraseña que ustedes elijan
 
 # ---------------------------------------------------------
 # Conexión y Gestión de Base de Datos SQLite
@@ -96,12 +97,9 @@ def obtener_config():
     return res if res else (1200.0, 30.0, 100.0, 800.0)
 
 def extraer_perfume_y_precio(linea):
-    """Extrae únicamente el nombre y el precio USD ignorando cantidades o unidades"""
-    # Limpiar unidades, ml y paréntesis que contengan números de pack/unidades
     linea_limpia = re.sub(r'(?i)\b\d+\s*(ml|gr|oz|un|unid|unidades|edp|edt|parfum)\b', '', linea)
     linea_limpia = re.sub(r'\(\d+\)', '', linea_limpia)
     
-    # Buscar patrón de precio con signo $
     match_precio = re.search(r'\$\s*(\d+[\.\,]?\d*)', linea_limpia)
     
     if match_precio:
@@ -114,13 +112,11 @@ def extraer_perfume_y_precio(linea):
         except ValueError:
             return None, None
     else:
-        # Si no hay signo $, toma el último valor numérico válido al final de la línea
         numeros = re.findall(r'\b\d+[\.\,]?\d*\b', linea_limpia)
         if numeros:
             precio_str = numeros[-1]
             idx_num = linea_limpia.rfind(precio_str)
             nombre = linea_limpia[:idx_num].strip()
-            # Limpiar posibles números sueltos al final del nombre
             nombre = re.sub(r'\s+\d+$', '', nombre)
             try:
                 precio = float(precio_str.replace(",", "."))
@@ -226,7 +222,7 @@ with tab1:
         st.info("No hay perfumes cargados en el inventario.")
 
 # ---------------------------------------------------------
-# TAB 2: Registrar salidas, ventas y Calculadora con Descuento Desplegable
+# TAB 2: Registrar salidas, ventas y Calculadora con Descuento
 # ---------------------------------------------------------
 with tab2:
     st.header("🛒 Registrar Venta y Calculadora de Promociones")
@@ -322,7 +318,6 @@ with tab2:
             subtotal = df_actual[df_actual["nombre"].isin(prods_combo)]["precio_100ml_ars"].sum()
             cant = len(prods_combo)
             
-            # Menú desplegable para porcentaje de descuento
             opcion_desc = st.selectbox(
                 "Seleccionar Descuento Aplicable:",
                 ["Sin Descuento (0%)", "5% de Descuento", "10% de Descuento", "15% de Descuento", "20% de Descuento", "Otro % (Manual)"]
@@ -394,7 +389,7 @@ with tab3:
                 st.error("Debes ingresar el nombre del perfume.")
 
 # ---------------------------------------------------------
-# TAB 4: Importación de PDF (Estricto 0 unidades en stock)
+# TAB 4: Importación de PDF
 # ---------------------------------------------------------
 with tab4:
     st.header("📄 Procesar PDF del Proveedor y Ajustar Márgenes")
@@ -466,7 +461,6 @@ with tab4:
                         existe = cursor.fetchone()
 
                         if existe:
-                            # Al actualizar el precio del PDF, forzamos que si sigue en "Disponible en Proveedor" no altere las unidades
                             cursor.execute("""
                                 UPDATE stock 
                                 SET costo_usd = ? 
@@ -474,7 +468,6 @@ with tab4:
                             """, (p_costo, existe[0]))
                             actualizados += 1
                         else:
-                            # Inserción limpia: Estrictamente 0 unidades
                             cursor.execute("""
                                 INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
                                 VALUES (?, 'Árabe', 0, 0, 0, ?, 'Disponible en Proveedor', ?)
@@ -493,7 +486,7 @@ with tab4:
             st.error(f"Error procesando el PDF: {e}")
 
 # ---------------------------------------------------------
-# TAB 5: Editar Estado, Stock y Detalles del Producto
+# TAB 5: Editar Estado, Stock, Detalles y Vaciar Inventario
 # ---------------------------------------------------------
 with tab5:
     st.header("✏️ Modificar Producto, Estado o Stock")
@@ -549,7 +542,7 @@ with tab5:
                 st.rerun()
 
         st.markdown("---")
-        st.subheader("🗑️ Eliminar Producto")
+        st.subheader("🗑️ Eliminar Producto Individual")
         if st.button("❌ ELIMINAR ESTE PRODUCTO DEL INVENTARIO", type="secondary"):
             conn = get_connection()
             cursor = conn.cursor()
@@ -561,8 +554,25 @@ with tab5:
     else:
         st.info("No hay productos para editar.")
 
+    st.markdown("---")
+    st.subheader("🚨 ZONA PROTEGIDA: Vaciar Todo el Inventario y Precios")
+    st.warning("Usa esta opción si deseas borrar absolutamente todo el catálogo y empezar de cero sin duplicados.")
+    
+    clave_inv_input = st.text_input("🔑 Ingrese la clave de administrador para vaciar el inventario:", type="password", key="pwd_inv")
+    if st.button("🚨 VACIAR CATALOGO Y STOCK COMPLETO", type="primary"):
+        if clave_inv_input == CLAVE_ADMIN:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM stock")
+            conn.commit()
+            conn.close()
+            st.success("¡Todo el catálogo e inventario fue eliminado con éxito! Puedes volver a cargar la lista limpia.")
+            st.rerun()
+        else:
+            st.error("❌ Clave incorrecta. Acción cancelada por seguridad.")
+
 # ---------------------------------------------------------
-# TAB 6: Historial de Ventas
+# TAB 6: Historial Protegido con Clave
 # ---------------------------------------------------------
 with tab6:
     st.header("📜 Historial de Movimientos")
@@ -574,7 +584,9 @@ with tab6:
         st.dataframe(df_historial.drop(columns=['id']), use_container_width=True)
         
         st.markdown("---")
-        st.subheader("🗑️ Eliminar Registros del Historial")
+        st.subheader("🔒 Zona Protegida: Eliminar Registros del Historial")
+        
+        clave_hist_input = st.text_input("🔑 Ingrese la clave de administrador para realizar modificaciones:", type="password", key="pwd_hist")
         
         opciones_hist = [f"ID: {row['id']} | {row['Fecha']} - {row['Perfume']} ({row['Tipo de Movimiento']})" for _, row in df_historial.iterrows()]
         registro_sel = st.selectbox("Selecciona un registro para eliminar:", opciones_hist)
@@ -583,22 +595,28 @@ with tab6:
         col_h1, col_h2 = st.columns(2)
         with col_h1:
             if st.button("❌ Eliminar Registro Seleccionado"):
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM historial WHERE id = ?", (id_hist_del,))
-                conn.commit()
-                conn.close()
-                st.success("Registro eliminado del historial.")
-                st.rerun()
+                if clave_hist_input == CLAVE_ADMIN:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM historial WHERE id = ?", (id_hist_del,))
+                    conn.commit()
+                    conn.close()
+                    st.success("Registro eliminado del historial.")
+                    st.rerun()
+                else:
+                    st.error("❌ Clave incorrecta. Ingrese la clave para eliminar.")
                 
         with col_h2:
             if st.button("🚨 VACIAR HISTORIAL COMPLETO", type="secondary"):
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM historial")
-                conn.commit()
-                conn.close()
-                st.warning("Historial vaciado completamente.")
-                st.rerun()
+                if clave_hist_input == CLAVE_ADMIN:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM historial")
+                    conn.commit()
+                    conn.close()
+                    st.warning("Historial vaciado completamente.")
+                    st.rerun()
+                else:
+                    st.error("❌ Clave incorrecta. Ingrese la clave para vaciar el historial.")
     else:
         st.info("Aún no hay movimientos registrados.")

@@ -125,7 +125,6 @@ with tab1:
     conn.close()
 
     if not df.empty:
-        # Asegurar tipo de dato numérico
         if "costo_usd" not in df.columns:
             df["costo_usd"] = 0.0
         df["costo_usd"] = df["costo_usd"].fillna(0.0)
@@ -434,9 +433,6 @@ with tab6:
     conn.close()
 
     if not df_historial.empty:
-        st.dataframe(df_historial, use_container_width=True)
-    else:
-        st.info("Aún no hay movimientos registrados.")
         st.dataframe(df_historial, use_container_width=True)
     else:
         st.info("Aún no hay movimientos registrados.")

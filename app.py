@@ -13,7 +13,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ---------------------------------------------------------
-# Configuración inicial de la página (SIEMPRE PRIMERO)
+# Configuración inicial de la página
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="STORIA PARFUMS - Control de Stock & Precios",
@@ -33,7 +33,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos_stock():
     try:
         df = conn.read(worksheet="stock", ttl=0)
-        if df is None or df.empty:
+        if df.empty:
             return pd.DataFrame(columns=[
                 "id", "nombre", "tipo", "botellas_100ml_cerradas", 
                 "ml_disponibles_abiertos", "decants_10ml_preparados", 
@@ -48,32 +48,24 @@ def cargar_datos_stock():
         ])
 
 def guardar_datos_stock(df):
-    try:
-        conn.update(worksheet="stock", data=df)
-    except Exception:
-        st.cache_data.clear()
-        conn.update(worksheet="stock", data=df)
+    conn.update(worksheet="stock", data=df)
 
 def cargar_historial():
     try:
         df = conn.read(worksheet="historial", ttl=0)
-        if df is None or df.empty:
+        if df.empty:
             return pd.DataFrame(columns=["id", "fecha", "perfume", "socio", "tipo_movimiento"])
         return df
     except Exception:
         return pd.DataFrame(columns=["id", "fecha", "perfume", "socio", "tipo_movimiento"])
 
 def guardar_historial(df):
-    try:
-        conn.update(worksheet="historial", data=df)
-    except Exception:
-        st.cache_data.clear()
-        conn.update(worksheet="historial", data=df)
+    conn.update(worksheet="historial", data=df)
 
 def cargar_config():
     try:
         df = conn.read(worksheet="config", ttl=0)
-        if df is not None and not df.empty:
+        if not df.empty:
             row = df.iloc[0]
             return float(row["cotizacion_dolar"]), float(row["margen_100ml"]), float(row["margen_decant"]), float(row["costo_envase_decant_ars"])
     except Exception:
@@ -87,11 +79,7 @@ def guardar_config(dolar, m100, mdec, envase):
         "margen_decant": mdec,
         "costo_envase_decant_ars": envase
     }])
-    try:
-        conn.update(worksheet="config", data=df)
-    except Exception:
-        st.cache_data.clear()
-        conn.update(worksheet="config", data=df)
+    conn.update(worksheet="config", data=df)
 
 # ---------------------------------------------------------
 # Funciones Auxiliares
@@ -590,30 +578,26 @@ with tab6:
 
                 if st.button("🚀 Sincronizar catálogo del PDF con Google Sheets", type="primary"):
                     df_actual = cargar_datos_stock()
-                    
-                    if not df_actual.empty and "id" in df_actual.columns:
-                        df_actual["id"] = pd.to_numeric(df_actual["id"], errors="coerce").fillna(0).astype(int)
-
                     cargados, actualizados = 0, 0
                     
                     for _, r in df_pdf.iterrows():
-                        mask = df_actual['nombre'].astype(str).str.lower() == str(r['nombre']).lower()
+                        mask = df_actual['nombre'].astype(str).str.lower() == r['nombre'].lower()
                         if mask.any():
-                            df_actual.loc[mask, 'costo_usd'] = float(r['costo_usd'])
+                            df_actual.loc[mask, 'costo_usd'] = r['costo_usd']
                             actualizados += 1
                         else:
                             nuevo_id = int(df_actual['id'].max() + 1) if not df_actual.empty and pd.notnull(df_actual['id'].max()) else 1
                             nuevo_p = pd.DataFrame([{
-                                "id": int(nuevo_id),
-                                "nombre": str(r['nombre']),
+                                "id": nuevo_id,
+                                "nombre": r['nombre'],
                                 "tipo": "Árabe",
                                 "botellas_100ml_cerradas": 0,
                                 "ml_disponibles_abiertos": 0,
                                 "decants_10ml_preparados": 0,
-                                "costo_usd": float(r['costo_usd']),
+                                "costo_usd": r['costo_usd'],
                                 "margen_100ml_custom": None,
                                 "estado": "A pedido",
-                                "socio_asignado": str(socio_dest)
+                                "socio_asignado": socio_dest
                             }])
                             df_actual = pd.concat([df_actual, nuevo_p], ignore_index=True)
                             cargados += 1

@@ -42,6 +42,13 @@ SOCIOS = list(USUARIOS_SOCIOS.keys())
 ESTADOS = ["A pedido", "En Stock", "Pedido / Señado", "Agotado"]
 CLAVE_ADMIN_MASTER = "1234"
 
+# Función auxiliar para formato ARS sin decimales con punto de miles ($124.497 ARS)
+def fmt_ars(monto):
+    try:
+        return f"${int(round(float(monto))):,}".replace(",", ".") + " ARS"
+    except (ValueError, TypeError):
+        return "$0 ARS"
+
 # ---------------------------------------------------------
 # ESTILOS CSS PERSONALIZADOS (STORIA PARFUMS: MARRÓN & DORADO)
 # ---------------------------------------------------------
@@ -302,8 +309,8 @@ def generar_pdf_catalogo(df_cat):
             row["nombre"],
             row["tipo"],
             row["estado"],
-            f"${row['precio_100ml']:,.0f}",
-            f"${row['precio_decant']:,.0f}"
+            fmt_ars(row['precio_100ml']),
+            fmt_ars(row['precio_decant'])
         ])
         
     t = Table(data, colWidths=[200, 70, 100, 90, 90])
@@ -345,8 +352,8 @@ def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
             item["nombre"],
             item["presentacion"],
             str(item["cantidad"]),
-            f"${item['precio_unitario']:,.0f}",
-            f"${item['subtotal']:,.0f}"
+            fmt_ars(item['precio_unitario']),
+            fmt_ars(item['subtotal'])
         ])
         
     t = Table(data, colWidths=[220, 90, 40, 100, 90])
@@ -364,9 +371,9 @@ def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
     story.append(Spacer(1, 15))
     
     totales_data = [
-        ["Subtotal:", f"${subtotal:,.0f} ARS"],
-        ["Descuento Aplicado:", f"-${descuento:,.0f} ARS"],
-        ["TOTAL FINAL:", f"${total:,.0f} ARS"]
+        ["Subtotal:", fmt_ars(subtotal)],
+        ["Descuento Aplicado:", f"-{fmt_ars(descuento)}"],
+        ["TOTAL FINAL:", fmt_ars(total)]
     ]
     t_tot = Table(totales_data, colWidths=[380, 160])
     t_tot.setStyle(TableStyle([
@@ -469,6 +476,9 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         for _, r in df_cat_base.iterrows():
             notas_html = f'<div class="perfume-notes">🌸 <b>Notas:</b> {r["notas_olfativas"]}</div>' if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
             
+            p_100ml_str = fmt_ars(r['precio_100ml'])
+            p_decant_str = fmt_ars(r['precio_decant'])
+
             col_card_1, col_card_2 = st.columns([1, 3])
             with col_card_1:
                 if pd.notnull(r.get("imagen_url")) and str(r.get("imagen_url")).startswith("http"):
@@ -482,8 +492,8 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                     <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']}</span>
                     {notas_html}
                     <div style="margin-top: 6px;">
-                        <div>Frasco 100ml: <span class="perfume-price">${r['precio_100ml']:,.0f} ARS</span></div>
-                        <div>Decant 10ml: <span class="perfume-price">${r['precio_decant']:,.0f} ARS</span></div>
+                        <div>Frasco 100ml: <span class="perfume-price">{p_100ml_str}</span></div>
+                        <div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span></div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -532,7 +542,7 @@ else:
             ]
         )
 
-        st.sidebar.caption(f"💵 Dólar: **${dolar_hoy:,.0f} ARS**")
+        st.sidebar.caption(f"💵 Dólar: **{fmt_ars(dolar_hoy)}**")
 
         # --- SECCIÓN: STOCK Y PRECIOS ---
         if seccion_admin == "📦 Stock & Precios":
@@ -540,9 +550,9 @@ else:
             
             col_p1, col_p2 = st.columns(2)
             with col_p1:
-                st.metric("Cotización Dólar", f"${dolar_hoy:,.0f} ARS")
+                st.metric("Cotización Dólar", fmt_ars(dolar_hoy))
             with col_p2:
-                st.metric("Envase Decant", f"${costo_envase:,.0f} ARS")
+                st.metric("Envase Decant", fmt_ars(costo_envase))
 
             df = cargar_datos_stock()
 
@@ -577,24 +587,31 @@ else:
                 if modo_vista == "📱 Tarjetas (Ideal Celular)":
                     for _, r in df.iterrows():
                         notas_str = f"<div><b>Notas:</b> {r['notas_olfativas']}</div>" if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
+                        p_100_card = fmt_ars(r['precio_venta_100ml_ars'])
+                        p_dec_card = fmt_ars(r['precio_venta_decant_10ml_ars'])
+                        
                         st.markdown(f"""
                         <div class="perfume-card">
                             <div class="perfume-title">{r['nombre']}</div>
                             <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']} ({r['socio_asignado']})</span>
                             {notas_str}
                             <div style="margin-top: 8px;">
-                                <div><b>100ml:</b> <span class="perfume-price">${r['precio_venta_100ml_ars']:,.0f} ARS</span> <small>({r['botellas_100ml_cerradas']} un)</small></div>
-                                <div><b>Decant 10ml:</b> <span class="perfume-price">${r['precio_venta_decant_10ml_ars']:,.0f} ARS</span> <small>({r['decants_10ml_preparados']} un / {r['ml_disponibles_abiertos']}ml ab.)</small></div>
+                                <div><b>100ml:</b> <span class="perfume-price">{p_100_card}</span> <small>({r['botellas_100ml_cerradas']} un)</small></div>
+                                <div><b>Decant 10ml:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r['decants_10ml_preparados']} un / {r['ml_disponibles_abiertos']}ml ab.)</small></div>
                                 <div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r['costo_usd']:.2f}</div>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
                 else:
-                    df_display = df.rename(columns={
+                    df_display = df.copy()
+                    df_display["precio_100ml_formatted"] = df_display["precio_venta_100ml_ars"].apply(fmt_ars)
+                    df_display["precio_10ml_formatted"] = df_display["precio_venta_decant_10ml_ars"].apply(fmt_ars)
+                    
+                    df_display = df_display.rename(columns={
                         "id": "ID", "nombre": "Perfume", "tipo": "Tipo", "estado": "Estado",
                         "botellas_100ml_cerradas": "100ml", "ml_disponibles_abiertos": "ml Ab.",
                         "decants_10ml_preparados": "Decants", "costo_usd": "USD",
-                        "precio_venta_100ml_ars": "Precio 100ml", "precio_venta_decant_10ml_ars": "Precio 10ml",
+                        "precio_100ml_formatted": "Precio 100ml", "precio_10ml_formatted": "Precio 10ml",
                         "socio_asignado": "Socio"
                     })
                     st.dataframe(df_display[["ID", "Perfume", "Estado", "100ml", "Precio 100ml", "Precio 10ml", "Socio"]], use_container_width=True)
@@ -635,14 +652,15 @@ else:
                         
                 if st.session_state.items_presupuesto:
                     df_pres_view = pd.DataFrame(st.session_state.items_presupuesto)
-                    st.dataframe(df_pres_view[["nombre", "presentacion", "cantidad", "subtotal"]], use_container_width=True)
+                    df_pres_view["subtotal_fmt"] = df_pres_view["subtotal"].apply(fmt_ars)
+                    st.dataframe(df_pres_view[["nombre", "presentacion", "cantidad", "subtotal_fmt"]].rename(columns={"subtotal_fmt": "Subtotal"}), use_container_width=True)
                     
                     subtotal_pres = df_pres_view["subtotal"].sum()
                     pct_desc_pres = st.selectbox("Descuento Promocional:", [0, 5, 10, 15, 20])
                     monto_desc_pres = subtotal_pres * (pct_desc_pres / 100)
                     total_pres = subtotal_pres - monto_desc_pres
                     
-                    st.metric("TOTAL FINAL", f"${total_pres:,.0f} ARS")
+                    st.metric("TOTAL FINAL", fmt_ars(total_pres))
                     
                     pdf_pres_bytes = generar_pdf_presupuesto(nombre_cliente, st.session_state.items_presupuesto, subtotal_pres, monto_desc_pres, total_pres)
                     st.download_button(

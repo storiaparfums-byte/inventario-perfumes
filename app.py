@@ -128,7 +128,7 @@ st.markdown("""
         font-weight: bold;
     }
     </style>
-""", unsafe_allow_html=unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 SOCIOS = ["Sebastián", "Franco", "Tomás"]
 ESTADOS = ["A pedido", "En Stock", "Pedido / Señado", "Agotado"]
@@ -382,7 +382,7 @@ st.sidebar.caption(f"📈 Margen 100ml: **{margen_100_gen:.0f}%**")
 st.sidebar.caption(f"🧪 Margen Decant: **{margen_dec_gen:.0f}%**")
 
 # ---------------------------------------------------------
-# SECCIÓN 1: Stock & Precios (Modo Móvil con Vista de Tarjetas o Tabla)
+# SECCIÓN 1: Stock & Precios
 # ---------------------------------------------------------
 if seccion == "📦 Stock & Precios":
     st.header("📦 Inventario Global")

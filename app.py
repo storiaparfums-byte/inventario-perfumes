@@ -4,6 +4,13 @@ import pandas as pd
 from datetime import datetime
 import pypdf
 import re
+import io
+
+# Librerías para generación de PDF profesional
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 # ---------------------------------------------------------
 # Configuración inicial de la página
@@ -14,10 +21,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# 💡 CONFIGURACIÓN DE NOMBRES Y SEGURIDAD
 SOCIOS = ["Sebastián", "Franco", "Tomás"]
 ESTADOS = ["Disponible en Proveedor", "En Stock", "Pedido / Señado", "Agotado"]
-CLAVE_ADMIN = "1234"  # 🔑 Cambia "1234" por la contraseña que ustedes elijan
+CLAVE_ADMIN = "1234"
 
 # ---------------------------------------------------------
 # Conexión y Gestión de Base de Datos SQLite
@@ -30,7 +36,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Tabla de Inventario
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +51,6 @@ def init_db():
         )
     """)
     
-    # Migraciones automáticas
     cursor.execute("PRAGMA table_info(stock)")
     columnas = [col[1] for col in cursor.fetchall()]
     if "costo_usd" not in columnas:
@@ -56,7 +60,6 @@ def init_db():
     if "estado" not in columnas:
         cursor.execute("ALTER TABLE stock ADD COLUMN estado TEXT DEFAULT 'Disponible en Proveedor'")
     
-    # Tabla de Configuración de Precios / Cotización
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config_precios (
             id INTEGER PRIMARY KEY DEFAULT 1,
@@ -66,10 +69,8 @@ def init_db():
             costo_envase_decant_ars REAL DEFAULT 800.0
         )
     """)
-    
     cursor.execute("INSERT OR IGNORE INTO config_precios (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars) VALUES (1, 1200.0, 30.0, 100.0, 800.0)")
     
-    # Tabla de Historial
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS historial (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +102,6 @@ def extraer_perfume_y_precio(linea):
     linea_limpia = re.sub(r'\(\d+\)', '', linea_limpia)
     
     match_precio = re.search(r'\$\s*(\d+[\.\,]?\d*)', linea_limpia)
-    
     if match_precio:
         precio_str = match_precio.group(1)
         idx_precio = linea_limpia.find(match_precio.group(0))
@@ -126,12 +126,117 @@ def extraer_perfume_y_precio(linea):
     return None, None
 
 # ---------------------------------------------------------
-# Interfaz Gráfica
+# Generación de PDFs
 # ---------------------------------------------------------
-st.title("🧪 Perfumes & Decants - Stock y Precios Automáticos")
+def generar_pdf_catalogo(df_cat):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor("#1E293B"), alignment=1)
+    subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=10, leading=12, textColor=colors.HexColor("#64748B"), alignment=1)
+    
+    story.append(Paragraph("🧪 S&F PERFUMES & DECANTS", title_style))
+    story.append(Paragraph("Catálogo Oficial de Precios al Público", subtitle_style))
+    story.append(Spacer(1, 15))
+    
+    data = [["Perfume", "Tipo", "Estado", "100 ml (ARS)", "Decant 10 ml (ARS)"]]
+    for _, row in df_cat.iterrows():
+        data.append([
+            row["nombre"],
+            row["tipo"],
+            row["estado"],
+            f"${row['precio_100ml']:,.0f}",
+            f"${row['precio_decant']:,.0f}"
+        ])
+        
+    t = Table(data, colWidths=[200, 70, 100, 90, 90])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(t)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, leading=26, textColor=colors.HexColor("#0F172A"))
+    meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor("#475569"))
+    
+    story.append(Paragraph("🧪 S&F PERFUMES", title_style))
+    story.append(Spacer(1, 5))
+    story.append(Paragraph(f"<b>Presupuesto para:</b> {cliente}", meta_style))
+    story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
+    story.append(Spacer(1, 15))
+    
+    data = [["Producto", "Presentación", "Cantidad", "Precio Unitario", "Subtotal"]]
+    for item in items:
+        data.append([
+            item["nombre"],
+            item["presentacion"],
+            str(item["cantidad"]),
+            f"${item['precio_unitario']:,.0f}",
+            f"${item['subtotal']:,.0f}"
+        ])
+        
+    t = Table(data, colWidths=[220, 90, 60, 90, 80])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 15))
+    
+    totales_data = [
+        ["Subtotal:", f"${subtotal:,.0f} ARS"],
+        ["Descuento Aplicado:", f"-${descuento:,.0f} ARS"],
+        ["TOTAL FINAL:", f"${total:,.0f} ARS"]
+    ]
+    t_tot = Table(totales_data, colWidths=[380, 160])
+    t_tot.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('TEXTCOLOR', (0,-1), (-1,-1), colors.HexColor("#1E3A8A")),
+        ('PADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_tot)
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# ---------------------------------------------------------
+# Interfaz Gráfica (Pestañas)
+# ---------------------------------------------------------
+st.title("🧪 Perfumes & Decants - S&F Perfumes")
+
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📦 Stock & Precios", 
+    "📖 Catálogo Clientes",
+    "📋 Crear Presupuesto",
     "🛒 Registrar Venta", 
     "➕ Agregar Perfume", 
     "📄 Cargar PDF Proveedor",
@@ -146,7 +251,6 @@ dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = obtener_config()
 # ---------------------------------------------------------
 with tab1:
     st.header("Inventario Global y Precios")
-    
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
         st.metric("Cotización Dólar", f"${dolar_hoy:,.0f} ARS")
@@ -164,7 +268,6 @@ with tab1:
     if not df.empty:
         df["costo_usd"] = df["costo_usd"].fillna(0.0)
         df["estado"] = df["estado"].fillna("Disponible en Proveedor")
-        
         df["margen_aplicado"] = df["margen_100ml_custom"].fillna(margen_100_gen)
         
         df["costo_100ml_ars"] = df["costo_usd"] * dolar_hoy
@@ -219,42 +322,143 @@ with tab1:
             use_container_width=True
         )
     else:
-        st.info("No hay perfumes cargados en el inventario.")
+        st.info("No hay perfumes cargados.")
 
 # ---------------------------------------------------------
-# TAB 2: Registrar salidas, ventas y Calculadora con Descuento
+# TAB 2: Catálogo Público para Clientes + Descarga PDF
 # ---------------------------------------------------------
 with tab2:
-    st.header("🛒 Registrar Venta y Calculadora de Promociones")
+    st.header("📖 Catálogo Público de Precios")
+    st.markdown("Lista limpia sin información interna de costos, lista para compartir con tus clientes.")
     
-    st.subheader("1. Venta Individual y Descuento de Stock")
+    conn = get_connection()
+    df_cat_base = pd.read_sql_query("SELECT nombre, tipo, estado, costo_usd, margen_100ml_custom FROM stock WHERE estado IN ('En Stock', 'Disponible en Proveedor')", conn)
+    conn.close()
+    
+    if not df_cat_base.empty:
+        df_cat_base["costo_usd"] = df_cat_base["costo_usd"].fillna(0.0)
+        df_cat_base["margen_aplicado"] = df_cat_base["margen_100ml_custom"].fillna(margen_100_gen)
+        
+        df_cat_base["costo_ars"] = df_cat_base["costo_usd"] * dolar_hoy
+        df_cat_base["precio_100ml"] = df_cat_base["costo_ars"] * (1 + (df_cat_base["margen_aplicado"] / 100))
+        df_cat_base["precio_decant"] = ((df_cat_base["costo_ars"] * 0.10) + costo_envase) * (1 + (margen_dec_gen / 100))
+
+        pdf_cat_bytes = generar_pdf_catalogo(df_cat_base)
+        st.download_button(
+            label="📥 Descargar Catálogo Completo en PDF",
+            data=pdf_cat_bytes,
+            file_name=f"Catalogo_Perfumes_{datetime.now().strftime('%d_%m_%Y')}.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
+        
+        df_cat_disp = df_cat_base.rename(columns={
+            "nombre": "Perfume",
+            "tipo": "Tipo",
+            "estado": "Disponibilidad",
+            "precio_100ml": "Precio 100ml (ARS)",
+            "precio_decant": "Decant 10ml (ARS)"
+        })
+        
+        df_cat_disp["Precio 100ml (ARS)"] = df_cat_disp["Precio 100ml (ARS)"].apply(lambda x: f"${x:,.0f} ARS")
+        df_cat_disp["Decant 10ml (ARS)"] = df_cat_disp["Decant 10ml (ARS)"].apply(lambda x: f"${x:,.0f} ARS")
+        
+        st.dataframe(df_cat_disp[["Perfume", "Tipo", "Disponibilidad", "Precio 100ml (ARS)", "Decant 10ml (ARS)"]], use_container_width=True)
+    else:
+        st.info("No hay productos cargados en catálogo.")
+
+# ---------------------------------------------------------
+# TAB 3: Crear Presupuesto Personalizado + PDF
+# ---------------------------------------------------------
+with tab3:
+    st.header("📋 Generador de Presupuestos para Clientes")
+    
+    nombre_cliente = st.text_input("Nombre del Cliente / Contacto:", value="Cliente")
+    
+    conn = get_connection()
+    df_p = pd.read_sql_query("SELECT id, nombre, costo_usd, margen_100ml_custom FROM stock", conn)
+    conn.close()
+    
+    if not df_p.empty:
+        df_p["costo_usd"] = df_p["costo_usd"].fillna(0.0)
+        df_p["margen"] = df_p["margen_100ml_custom"].fillna(margen_100_gen)
+        df_p["precio_100ml"] = (df_p["costo_usd"] * dolar_hoy) * (1 + (df_p["margen"] / 100))
+        df_p["precio_decant"] = ((df_p["costo_usd"] * dolar_hoy * 0.10) + costo_envase) * (1 + (margen_dec_gen / 100))
+        
+        if "items_presupuesto" not in st.session_state:
+            st.session_state.items_presupuesto = []
+            
+        with st.form("form_item_presupuesto"):
+            c1, c2, c3 = st.columns([2, 1, 1])
+            with c1:
+                p_sel = st.selectbox("Selecciona Perfume:", df_p["nombre"].tolist())
+            with c2:
+                pres_sel = st.selectbox("Presentación:", ["Botella 100ml", "Decant 10ml"])
+            with c3:
+                cant_sel = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+                
+            add_item = st.form_submit_button("➕ Agregar al Presupuesto")
+            if add_item:
+                p_data = df_p[df_p["nombre"] == p_sel].iloc[0]
+                p_unit = p_data["precio_100ml"] if pres_sel == "Botella 100ml" else p_data["precio_decant"]
+                
+                st.session_state.items_presupuesto.append({
+                    "nombre": p_sel,
+                    "presentacion": pres_sel,
+                    "cantidad": cant_sel,
+                    "precio_unitario": p_unit,
+                    "subtotal": p_unit * cant_sel
+                })
+                st.success(f"Agregado {p_sel} ({pres_sel}) x{cant_sel}")
+                
+        if st.session_state.items_presupuesto:
+            st.subheader("Items en este Presupuesto")
+            df_pres_view = pd.DataFrame(st.session_state.items_presupuesto)
+            st.dataframe(df_pres_view[["nombre", "presentacion", "cantidad", "precio_unitario", "subtotal"]], use_container_width=True)
+            
+            subtotal_pres = df_pres_view["subtotal"].sum()
+            
+            pct_desc_pres = st.selectbox("Descuento Promocional:", [0, 5, 10, 15, 20])
+            monto_desc_pres = subtotal_pres * (pct_desc_pres / 100)
+            total_pres = subtotal_pres - monto_desc_pres
+            
+            st.metric("TOTAL FINAL PRESUPUESTO", f"${total_pres:,.0f} ARS", delta=f"-${monto_desc_pres:,.0f} ARS ({pct_desc_pres}%)" if pct_desc_pres > 0 else None)
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                pdf_pres_bytes = generar_pdf_presupuesto(nombre_cliente, st.session_state.items_presupuesto, subtotal_pres, monto_desc_pres, total_pres)
+                st.download_button(
+                    label="📄 Descargar Presupuesto en PDF",
+                    data=pdf_pres_bytes,
+                    file_name=f"Presupuesto_{nombre_cliente.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    type="primary"
+                )
+            with col_b2:
+                if st.button("🗑️ Limpiar Presupuesto"):
+                    st.session_state.items_presupuesto = []
+                    st.rerun()
+
+# ---------------------------------------------------------
+# TAB 4: Registrar Ventas
+# ---------------------------------------------------------
+with tab4:
+    st.header("🛒 Registrar Venta y Descuento de Stock")
     conn = get_connection()
     df_actual = pd.read_sql_query("SELECT id, nombre, socio_asignado, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom FROM stock", conn)
     conn.close()
 
     if not df_actual.empty:
-        opciones = [
-            f"ID: {row['id']} | {row['nombre']} (Posee: {row['socio_asignado']})" 
-            for _, row in df_actual.iterrows()
-        ]
+        opciones = [f"ID: {row['id']} | {row['nombre']} (Posee: {row['socio_asignado']})" for _, row in df_actual.iterrows()]
         seleccion = st.selectbox("Selecciona el producto:", opciones)
         id_producto = int(seleccion.split(" | ")[0].replace("ID: ", ""))
 
-        socio_realiza_venta = st.selectbox("¿Qué socio está realizando esta venta/movimiento?", SOCIOS)
-
-        tipo_operacion = st.radio(
-            "¿Qué movimiento deseas registrar?",
-            [
-                "Venta de Botella 100ml (Cerrada)",
-                "Venta de Decant 10ml (Listo)",
-                "Descontar 10ml de frasco abierto (en uso)"
-            ]
-        )
+        socio_realiza_venta = st.selectbox("¿Qué socio realiza la venta?", SOCIOS)
+        tipo_operacion = st.radio("¿Qué movimiento deseas registrar?", ["Venta de Botella 100ml (Cerrada)", "Venta de Decant 10ml (Listo)", "Descontar 10ml de frasco abierto (en uso)"])
 
         if st.button("Procesar Movimiento", type="primary"):
             conn = get_connection()
             cursor = conn.cursor()
-
             cursor.execute("SELECT nombre, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = ?", (id_producto,))
             nombre_p, botellas, ml, decants = cursor.fetchone()
 
@@ -275,7 +479,7 @@ with tab2:
                     st.success("Se descontó 1 decant listo de 10ml.")
                     exito = True
                 else:
-                    st.error("No hay decants listos. Descuenta del frasco abierto.")
+                    st.error("No hay decants listos.")
 
             elif tipo_operacion == "Descontar 10ml de frasco abierto (en uso)":
                 if ml >= 10:
@@ -283,282 +487,160 @@ with tab2:
                     st.success("Se descontaron 10ml del frasco abierto.")
                     exito = True
                 elif botellas > 0:
-                    cursor.execute("""
-                        UPDATE stock 
-                        SET botellas_100ml_cerradas = botellas_100ml_cerradas - 1,
-                            ml_disponibles_abiertos = ml_disponibles_abiertos + 90
-                        WHERE id = ?
-                    """, (id_producto,))
-                    st.warning("Se abrió automáticamente una botella de 100ml y se descontaron los 10ml.")
+                    cursor.execute("UPDATE stock SET botellas_100ml_cerradas = botellas_100ml_cerradas - 1, ml_disponibles_abiertos = ml_disponibles_abiertos + 90 WHERE id = ?", (id_producto,))
+                    st.warning("Se abrió una botella de 100ml y se descontaron 10ml.")
                     exito = True
                 else:
-                    st.error("No quedan mililitros ni frascos cerrados.")
+                    st.error("Sin mililitros ni frascos cerrados.")
 
             if exito:
-                cursor.execute(
-                    "INSERT INTO historial (fecha, perfume, socio, tipo_movimiento) VALUES (?, ?, ?, ?)",
-                    (fecha_actual, nombre_p, socio_realiza_venta, tipo_operacion)
-                )
+                cursor.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento) VALUES (?, ?, ?, ?)", (fecha_actual, nombre_p, socio_realiza_venta, tipo_operacion))
                 conn.commit()
                 conn.close()
                 st.rerun()
             else:
                 conn.close()
 
-        st.markdown("---")
-        st.subheader("🏷️ 2. Calculadora de Promociones (Venta de 2 o más perfumes)")
-        
-        df_actual["costo_usd"] = df_actual["costo_usd"].fillna(0.0)
-        df_actual["margen_aplicado"] = df_actual["margen_100ml_custom"].fillna(margen_100_gen)
-        df_actual["precio_100ml_ars"] = (df_actual["costo_usd"] * dolar_hoy) * (1 + (df_actual["margen_aplicado"] / 100))
-
-        prods_combo = st.multiselect("Selecciona los perfumes de 100ml que lleva el cliente:", df_actual["nombre"].tolist())
-        
-        if prods_combo:
-            subtotal = df_actual[df_actual["nombre"].isin(prods_combo)]["precio_100ml_ars"].sum()
-            cant = len(prods_combo)
-            
-            opcion_desc = st.selectbox(
-                "Seleccionar Descuento Aplicable:",
-                ["Sin Descuento (0%)", "5% de Descuento", "10% de Descuento", "15% de Descuento", "20% de Descuento", "Otro % (Manual)"]
-            )
-            
-            if opcion_desc == "Sin Descuento (0%)":
-                pct_descuento = 0.0
-            elif opcion_desc == "5% de Descuento":
-                pct_descuento = 5.0
-            elif opcion_desc == "10% de Descuento":
-                pct_descuento = 10.0
-            elif opcion_desc == "15% de Descuento":
-                pct_descuento = 15.0
-            elif opcion_desc == "20% de Descuento":
-                pct_descuento = 20.0
-            else:
-                pct_descuento = st.number_input("Ingresa el % de descuento personalizado:", min_value=0.0, max_value=100.0, value=10.0, step=1.0)
-
-            monto_descuento = subtotal * (pct_descuento / 100)
-            total_final = subtotal - monto_descuento
-            
-            c_combo1, c_combo2, c_combo3 = st.columns(3)
-            with c_combo1:
-                st.metric("Subtotal Normal", f"${subtotal:,.0f} ARS")
-            with c_combo2:
-                st.metric(f"Ahorro Cliente ({pct_descuento:.0f}%)", f"-${monto_descuento:,.0f} ARS")
-            with c_combo3:
-                st.metric("Total a Cobrar", f"${total_final:,.0f} ARS")
-
-    else:
-        st.info("No hay productos cargados.")
-
 # ---------------------------------------------------------
-# TAB 3: Agregar perfume nuevo
+# TAB 5: Agregar perfume nuevo
 # ---------------------------------------------------------
-with tab3:
+with tab5:
     st.header("Cargar Nuevo Producto Manualmente")
     with st.form("form_alta", clear_on_submit=True):
-        nombre = st.text_input("Nombre del perfume y casa (ej. Lattafa Khamrah)")
-        tipo = st.selectbox("Categoría / Tipo", ["Árabe", "Diseñador"])
-        estado = st.selectbox("Estado inicial del producto", ESTADOS)
-        costo_usd = st.number_input("Costo de compra en USD ($)", min_value=0.0, value=0.0, step=1.0)
+        nombre = st.text_input("Nombre del perfume")
+        tipo = st.selectbox("Categoría", ["Árabe", "Diseñador"])
+        estado = st.selectbox("Estado inicial", ESTADOS)
+        costo_usd = st.number_input("Costo de compra USD ($)", min_value=0.0, value=0.0, step=1.0)
         
-        col_c1, col_c2, col_c3 = st.columns(3)
-        with col_c1:
-            botellas = st.number_input("Botellas 100ml cerradas", min_value=0, value=1 if estado == "En Stock" else 0, step=1)
-        with col_c2:
-            ml_abiertos = st.number_input("ml en frasco abierto (0-100ml)", min_value=0, max_value=100, value=0)
-        with col_c3:
-            decants = st.number_input("Decants 10ml ya listos", min_value=0, value=0, step=1)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            botellas = st.number_input("Botellas 100ml", min_value=0, value=1 if estado == "En Stock" else 0)
+        with c2:
+            ml_abiertos = st.number_input("ml Abiertos", min_value=0, max_value=100, value=0)
+        with c3:
+            decants = st.number_input("Decants 10ml", min_value=0, value=0)
             
-        socio = st.selectbox("¿Quién guarda este producto?", SOCIOS)
-
+        socio = st.selectbox("Socio a cargo", SOCIOS)
         guardar = st.form_submit_button("Guardar en Inventario")
 
         if guardar:
             if nombre.strip() != "":
                 conn = get_connection()
                 cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio))
+                cursor.execute("INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio))
                 conn.commit()
                 conn.close()
-                st.success(f"¡'{nombre}' fue agregado correctamente como '{estado}'!")
+                st.success("¡Producto cargado!")
                 st.rerun()
-            else:
-                st.error("Debes ingresar el nombre del perfume.")
 
 # ---------------------------------------------------------
-# TAB 4: Importación de PDF
+# TAB 6: Importación de PDF Proveedor
 # ---------------------------------------------------------
-with tab4:
-    st.header("📄 Procesar PDF del Proveedor y Ajustar Márgenes")
-    
-    st.subheader("⚙️ 1. Ajustes Generales de Moneda y Márgenes Base")
+with tab6:
+    st.header("📄 Procesar PDF del Proveedor")
     with st.form("form_config"):
-        col_cfg1, col_cfg2, col_cfg3, col_cfg4 = st.columns(4)
-        with col_cfg1:
-            nuevo_dolar = st.number_input("Cotización Dólar (ARS)", min_value=1.0, value=float(dolar_hoy), step=10.0)
-        with col_cfg2:
-            nuevo_margen_100 = st.number_input("Margen Base 100ml (%)", min_value=0.0, value=float(margen_100_gen), step=5.0)
-        with col_cfg3:
-            nuevo_margen_dec = st.number_input("Margen Base Decant (%)", min_value=0.0, value=float(margen_dec_gen), step=5.0)
-        with col_cfg4:
-            nuevo_costo_envase = st.number_input("Envase Decant (ARS)", min_value=0.0, value=float(costo_envase), step=50.0)
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            nuevo_dolar = st.number_input("Cotización Dólar (ARS)", min_value=1.0, value=float(dolar_hoy))
+        with col2:
+            nuevo_m100 = st.number_input("Margen 100ml %", min_value=0.0, value=float(margen_100_gen))
+        with col3:
+            nuevo_mdec = st.number_input("Margen Decant %", min_value=0.0, value=float(margen_dec_gen))
+        with col4:
+            nuevo_envase = st.number_input("Envase Decant (ARS)", min_value=0.0, value=float(costo_envase))
             
-        guardar_cfg = st.form_submit_button("Guardar Parámetros de Precios")
-        if guardar_cfg:
+        if st.form_submit_button("Guardar Parámetros de Precios"):
             conn = get_connection()
             cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE config_precios 
-                SET cotizacion_dolar = ?, margen_100ml = ?, margen_decant = ?, costo_envase_decant_ars = ?
-                WHERE id = 1
-            """, (nuevo_dolar, nuevo_margen_100, nuevo_margen_dec, nuevo_costo_envase))
+            cursor.execute("UPDATE config_precios SET cotizacion_dolar = ?, margen_100ml = ?, margen_decant = ?, costo_envase_decant_ars = ? WHERE id = 1", (nuevo_dolar, nuevo_m100, nuevo_mdec, nuevo_envase))
             conn.commit()
             conn.close()
-            st.success("Parámetros actualizados.")
+            st.success("Parámetros guardados.")
             st.rerun()
 
-    st.markdown("---")
-    st.subheader("📥 2. Cargar Lista en PDF del Proveedor")
-    st.info("📌 TODOS los productos del PDF se sincronizarán estrictamente con 0 unidades físicas y estado 'Disponible en Proveedor'.")
-    
-    socio_destinatario = st.selectbox("Asignar estos perfumes al socio:", SOCIOS)
+    socio_dest = st.selectbox("Asignar perfumes del PDF a:", SOCIOS)
     uploaded_pdf = st.file_uploader("Sube el PDF enviado por tu proveedor", type=["pdf"])
 
     if uploaded_pdf is not None:
         try:
             reader = pypdf.PdfReader(uploaded_pdf)
-            texto_completo = ""
-            for page in reader.pages:
-                texto_completo += page.extract_text() + "\n"
-
+            texto_completo = "".join([page.extract_text() + "\n" for page in reader.pages])
             lineas = texto_completo.split("\n")
-            items_encontrados = []
+            items = []
+            for l in lineas:
+                p_nom, p_cost = extraer_perfume_y_precio(l)
+                if p_nom and p_cost and len(p_nom) > 2 and p_cost > 3:
+                    items.append({"nombre": p_nom, "costo_usd": p_cost})
 
-            for linea in lineas:
-                p_nombre, p_costo = extraer_perfume_y_precio(linea)
-                if p_nombre and p_costo and len(p_nombre) > 2 and p_costo > 3:
-                    items_encontrados.append({"nombre": p_nombre, "costo_usd": p_costo})
-
-            if items_encontrados:
-                df_pdf = pd.DataFrame(items_encontrados)
-                st.write(f"Se detectaron **{len(df_pdf)}** perfumes en el PDF:")
+            if items:
+                df_pdf = pd.DataFrame(items)
+                st.write(f"Se detectaron **{len(df_pdf)}** perfumes:")
                 st.dataframe(df_pdf, use_container_width=True)
 
                 if st.button("🚀 Sincronizar catálogo del PDF con el Inventario", type="primary"):
                     conn = get_connection()
                     cursor = conn.cursor()
-                    cargados = 0
-                    actualizados = 0
-
-                    for _, row in df_pdf.iterrows():
-                        p_nom = row['nombre']
-                        p_costo = row['costo_usd']
-
-                        cursor.execute("SELECT id FROM stock WHERE LOWER(nombre) = LOWER(?)", (p_nom,))
-                        existe = cursor.fetchone()
-
-                        if existe:
-                            cursor.execute("""
-                                UPDATE stock 
-                                SET costo_usd = ? 
-                                WHERE id = ?
-                            """, (p_costo, existe[0]))
+                    cargados, actualizados = 0, 0
+                    for _, r in df_pdf.iterrows():
+                        cursor.execute("SELECT id FROM stock WHERE LOWER(nombre) = LOWER(?)", (r['nombre'],))
+                        ex = cursor.fetchone()
+                        if ex:
+                            cursor.execute("UPDATE stock SET costo_usd = ? WHERE id = ?", (r['costo_usd'], ex[0]))
                             actualizados += 1
                         else:
-                            cursor.execute("""
-                                INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                                VALUES (?, 'Árabe', 0, 0, 0, ?, 'Disponible en Proveedor', ?)
-                            """, (p_nom, p_costo, socio_destinatario))
+                            cursor.execute("INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado) VALUES (?, 'Árabe', 0, 0, 0, ?, 'Disponible en Proveedor', ?)", (r['nombre'], r['costo_usd'], socio_dest))
                             cargados += 1
-
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Sincronización realizada! Se registraron {cargados} perfumes con 0 unidades (Disponible en Proveedor) y se actualizaron {actualizados} precios.")
+                    st.success(f"¡Sincronizado! {cargados} creados con 0 unidades y {actualizados} actualizados.")
                     st.rerun()
-            else:
-                st.warning("No se pudieron extraer precios automáticamente. Vista previa del texto extraído:")
-                st.text_area("Texto extraído del PDF:", texto_completo, height=250)
-
         except Exception as e:
-            st.error(f"Error procesando el PDF: {e}")
+            st.error(f"Error procesando PDF: {e}")
 
 # ---------------------------------------------------------
-# TAB 5: Editar Estado, Stock, Detalles y Vaciar Inventario
+# TAB 7: Editar Estado, Stock y Vaciar Inventario
 # ---------------------------------------------------------
-with tab5:
-    st.header("✏️ Modificar Producto, Estado o Stock")
+with tab7:
+    st.header("✏️ Modificar Producto o Vaciar Inventario")
     conn = get_connection()
     df_mod = pd.read_sql_query("SELECT * FROM stock", conn)
     conn.close()
 
     if not df_mod.empty:
         opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'Disponible en Proveedor')}]" for _, row in df_mod.iterrows()]
-        prod_seleccionado = st.selectbox("Selecciona el producto a modificar:", opciones_mod)
-        id_mod = int(prod_seleccionado.split(" | ")[0].replace("ID: ", ""))
-
+        prod_sel = st.selectbox("Selecciona producto a modificar:", opciones_mod)
+        id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
         prod_data = df_mod[df_mod['id'] == id_mod].iloc[0]
 
-        st.subheader("Editar Ficha del Perfume")
         with st.form("form_edicion"):
-            nuevo_nombre = st.text_input("Nombre del Perfume", value=prod_data['nombre'])
+            nuevo_nombre = st.text_input("Nombre", value=prod_data['nombre'])
             nuevo_tipo = st.selectbox("Tipo", ["Árabe", "Diseñador"], index=0 if prod_data['tipo'] == "Árabe" else 1)
-            
-            estado_actual = prod_data['estado'] if pd.notnull(prod_data['estado']) and prod_data['estado'] in ESTADOS else ESTADOS[0]
-            nuevo_estado = st.selectbox("Estado del Perfume", ESTADOS, index=ESTADOS.index(estado_actual))
-            
-            costo_val = float(prod_data['costo_usd']) if pd.notnull(prod_data['costo_usd']) else 0.0
-            nuevo_costo = st.number_input("Costo USD ($)", min_value=0.0, value=costo_val, step=1.0)
-            
-            margen_actual_val = float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen)
-            nuevo_margen_indiv = st.number_input("Margen 100ml % (Personalizado)", min_value=0.0, value=margen_actual_val, step=5.0)
+            nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(prod_data['estado']) if prod_data['estado'] in ESTADOS else 0)
+            nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']))
+            nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))
 
             c1, c2, c3 = st.columns(3)
             with c1:
-                nuevas_botellas = st.number_input("Botellas 100ml Cerradas", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
+                nbot = st.number_input("Botellas 100ml", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
             with c2:
-                nuevos_ml = st.number_input("ml Abiertos en Uso", min_value=0, max_value=100, value=int(prod_data['ml_disponibles_abiertos']))
+                nml = st.number_input("ml Abiertos", min_value=0, max_value=100, value=int(prod_data['ml_disponibles_abiertos']))
             with c3:
-                nuevos_decants = st.number_input("Decants 10ml Listos", min_value=0, value=int(prod_data['decants_10ml_preparados']))
+                ndec = st.number_input("Decants 10ml", min_value=0, value=int(prod_data['decants_10ml_preparados']))
 
-            socio_val = prod_data['socio_asignado'] if prod_data['socio_asignado'] in SOCIOS else SOCIOS[0]
-            nuevo_socio = st.selectbox("Socio a Cargo", SOCIOS, index=SOCIOS.index(socio_val))
+            nuevo_socio = st.selectbox("Socio a cargo", SOCIOS, index=SOCIOS.index(prod_data['socio_asignado']) if prod_data['socio_asignado'] in SOCIOS else 0)
 
-            guardar_cambios = st.form_submit_button("Guardar Cambios")
-
-            if guardar_cambios:
+            if st.form_submit_button("Guardar Cambios"):
                 conn = get_connection()
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE stock 
-                    SET nombre = ?, tipo = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, costo_usd = ?, margen_100ml_custom = ?, estado = ?, socio_asignado = ?
-                    WHERE id = ?
-                """, (nuevo_nombre, nuevo_tipo, nuevas_botellas, nuevos_ml, nuevos_decants, nuevo_costo, nuevo_margen_indiv, nuevo_estado, nuevo_socio, id_mod))
+                cursor.execute("UPDATE stock SET nombre = ?, tipo = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, costo_usd = ?, margen_100ml_custom = ?, estado = ?, socio_asignado = ? WHERE id = ?", (nuevo_nombre, nuevo_tipo, nbot, nml, ndec, nuevo_costo, nuevo_margen, nuevo_estado, nuevo_socio, id_mod))
                 conn.commit()
                 conn.close()
-                st.success("¡Perfume actualizado con éxito!")
+                st.success("¡Producto actualizado!")
                 st.rerun()
 
-        st.markdown("---")
-        st.subheader("🗑️ Eliminar Producto Individual")
-        if st.button("❌ ELIMINAR ESTE PRODUCTO DEL INVENTARIO", type="secondary"):
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
-            conn.commit()
-            conn.close()
-            st.warning("Producto eliminado.")
-            st.rerun()
-    else:
-        st.info("No hay productos para editar.")
-
     st.markdown("---")
-    st.subheader("🚨 ZONA PROTEGIDA: Vaciar Todo el Inventario y Precios")
-    st.warning("Usa esta opción si deseas borrar absolutamente todo el catálogo y empezar de cero sin duplicados.")
-    
-    clave_inv_input = st.text_input("🔑 Ingrese la clave de administrador para vaciar el inventario:", type="password", key="pwd_inv")
+    st.subheader("🚨 ZONA PROTEGIDA: Vaciar Todo el Catálogo")
+    clave_inv_input = st.text_input("🔑 Clave de Administrador:", type="password", key="pwd_inv")
     if st.button("🚨 VACIAR CATALOGO Y STOCK COMPLETO", type="primary"):
         if clave_inv_input == CLAVE_ADMIN:
             conn = get_connection()
@@ -566,57 +648,53 @@ with tab5:
             cursor.execute("DELETE FROM stock")
             conn.commit()
             conn.close()
-            st.success("¡Todo el catálogo e inventario fue eliminado con éxito! Puedes volver a cargar la lista limpia.")
+            st.success("¡Catálogo vaciado completamente!")
             st.rerun()
         else:
-            st.error("❌ Clave incorrecta. Acción cancelada por seguridad.")
+            st.error("❌ Clave incorrecta.")
 
 # ---------------------------------------------------------
-# TAB 6: Historial Protegido con Clave
+# TAB 8: Historial Protegido
 # ---------------------------------------------------------
-with tab6:
+with tab8:
     st.header("📜 Historial de Movimientos")
     conn = get_connection()
-    df_historial = pd.read_sql_query("SELECT id, fecha as Fecha, perfume as Perfume, socio as 'Socio que vendió', tipo_movimiento as 'Tipo de Movimiento' FROM historial ORDER BY id DESC", conn)
+    df_hist = pd.read_sql_query("SELECT id, fecha as Fecha, perfume as Perfume, socio as 'Socio que vendió', tipo_movimiento as 'Tipo de Movimiento' FROM historial ORDER BY id DESC", conn)
     conn.close()
 
-    if not df_historial.empty:
-        st.dataframe(df_historial.drop(columns=['id']), use_container_width=True)
-        
+    if not df_hist.empty:
+        st.dataframe(df_hist.drop(columns=['id']), use_container_width=True)
         st.markdown("---")
-        st.subheader("🔒 Zona Protegida: Eliminar Registros del Historial")
+        clave_hist = st.text_input("🔑 Clave de Administrador para modificar historial:", type="password", key="pwd_hist")
         
-        clave_hist_input = st.text_input("🔑 Ingrese la clave de administrador para realizar modificaciones:", type="password", key="pwd_hist")
-        
-        opciones_hist = [f"ID: {row['id']} | {row['Fecha']} - {row['Perfume']} ({row['Tipo de Movimiento']})" for _, row in df_historial.iterrows()]
-        registro_sel = st.selectbox("Selecciona un registro para eliminar:", opciones_hist)
-        id_hist_del = int(registro_sel.split(" | ")[0].replace("ID: ", ""))
+        opciones_hist = [f"ID: {row['id']} | {row['Fecha']} - {row['Perfume']}" for _, row in df_hist.iterrows()]
+        reg_sel = st.selectbox("Selecciona registro a borrar:", opciones_hist)
+        id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
 
-        col_h1, col_h2 = st.columns(2)
-        with col_h1:
+        c1, c2 = st.columns(2)
+        with c1:
             if st.button("❌ Eliminar Registro Seleccionado"):
-                if clave_hist_input == CLAVE_ADMIN:
+                if clave_hist == CLAVE_ADMIN:
                     conn = get_connection()
                     cursor = conn.cursor()
-                    cursor.execute("DELETE FROM historial WHERE id = ?", (id_hist_del,))
+                    cursor.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
                     conn.commit()
                     conn.close()
-                    st.success("Registro eliminado del historial.")
+                    st.success("Registro eliminado.")
                     st.rerun()
                 else:
-                    st.error("❌ Clave incorrecta. Ingrese la clave para eliminar.")
-                
-        with col_h2:
+                    st.error("❌ Clave incorrecta.")
+        with c2:
             if st.button("🚨 VACIAR HISTORIAL COMPLETO", type="secondary"):
-                if clave_hist_input == CLAVE_ADMIN:
+                if clave_hist == CLAVE_ADMIN:
                     conn = get_connection()
                     cursor = conn.cursor()
                     cursor.execute("DELETE FROM historial")
                     conn.commit()
                     conn.close()
-                    st.warning("Historial vaciado completamente.")
+                    st.warning("Historial vaciado.")
                     st.rerun()
                 else:
-                    st.error("❌ Clave incorrecta. Ingrese la clave para vaciar el historial.")
+                    st.error("❌ Clave incorrecta.")
     else:
-        st.info("Aún no hay movimientos registrados.")
+        st.info("No hay movimientos registrados.")

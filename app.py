@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 💡 NOMBRES REALES DE LOS SOCIOS Y ESTADOS
 SOCIOS = ["Sebastián", "Franco", "Tomás"]
-ESTADOS = ["En Stock", "Pedido / Señado", "Disponible en Proveedor", "Agotado"]
+ESTADOS = ["Disponible en Proveedor", "En Stock", "Pedido / Señado", "Agotado"]
 
 # ---------------------------------------------------------
 # Conexión y Gestión de Base de Datos SQLite
@@ -40,7 +40,7 @@ def init_db():
             decants_10ml_preparados INTEGER DEFAULT 0,
             costo_usd REAL DEFAULT 0.0,
             margen_100ml_custom REAL DEFAULT NULL,
-            estado TEXT DEFAULT 'En Stock',
+            estado TEXT DEFAULT 'Disponible en Proveedor',
             socio_asignado TEXT NOT NULL
         )
     """)
@@ -53,7 +53,7 @@ def init_db():
     if "margen_100ml_custom" not in columnas:
         cursor.execute("ALTER TABLE stock ADD COLUMN margen_100ml_custom REAL DEFAULT NULL")
     if "estado" not in columnas:
-        cursor.execute("ALTER TABLE stock ADD COLUMN estado TEXT DEFAULT 'En Stock'")
+        cursor.execute("ALTER TABLE stock ADD COLUMN estado TEXT DEFAULT 'Disponible en Proveedor'")
     
     # Tabla de Configuración de Precios / Cotización
     cursor.execute("""
@@ -96,20 +96,13 @@ def obtener_config():
     return res if res else (1200.0, 30.0, 100.0, 800.0)
 
 def extraer_perfume_y_precio(linea):
-    """Limpia '100ml', '50ml', 'EDP', etc. y busca el precio en USD"""
-    # Eliminar variaciones de mililitros para no confundir 100ml con $100
     linea_limpia = re.sub(r'(?i)\b\d+\s*(ml|gr|oz)\b', '', linea)
-    
-    # Buscar el precio en USD (formato $XX.XX, $XX o simplemente un número al final)
-    # 1. Intentar encontrar un símbolo de dólar $XX.XX o $XX
     match_precio = re.search(r'\$\s*(\d+[\.\,]?\d*)', linea_limpia)
     
     if not match_precio:
-        # 2. Si no hay $, buscar el último número que aparezca en la línea
         numeros = re.findall(r'\b\d+[\.\,]?\d*\b', linea_limpia)
         if numeros:
             precio_str = numeros[-1]
-            # Extraer el nombre quitando el número del final
             idx_num = linea_limpia.rfind(precio_str)
             nombre = linea_limpia[:idx_num].strip()
             try:
@@ -145,7 +138,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = obtener_config()
 
 # ---------------------------------------------------------
-# TAB 1: Inventario Global, Buscador y Filtro por Estado
+# TAB 1: Inventario Global y Filtro por Estado
 # ---------------------------------------------------------
 with tab1:
     st.header("Inventario Global y Precios")
@@ -166,7 +159,7 @@ with tab1:
 
     if not df.empty:
         df["costo_usd"] = df["costo_usd"].fillna(0.0)
-        df["estado"] = df["estado"].fillna("En Stock")
+        df["estado"] = df["estado"].fillna("Disponible en Proveedor")
         
         df["margen_aplicado"] = df["margen_100ml_custom"].fillna(margen_100_gen)
         
@@ -175,7 +168,6 @@ with tab1:
         costo_liquido_10ml = df["costo_100ml_ars"] * 0.10
         df["precio_venta_decant_10ml_ars"] = (costo_liquido_10ml + costo_envase) * (1 + (margen_dec_gen / 100))
 
-        # 🔍 Buscador y Filtros
         col_busqueda, col_f_est = st.columns([2, 1])
         with col_busqueda:
             busqueda = st.text_input("🔍 Buscar perfume por nombre:", placeholder="Ej. Club de Nuit, Khamrah...")
@@ -226,12 +218,14 @@ with tab1:
         st.info("No hay perfumes cargados en el inventario.")
 
 # ---------------------------------------------------------
-# TAB 2: Registrar salidas o ventas
+# TAB 2: Registrar salidas, ventas y Calculadora de Descuentos
 # ---------------------------------------------------------
 with tab2:
-    st.header("Registrar Venta o Descuento de Stock")
+    st.header("🛒 Registrar Venta y Calculadora de Promociones")
+    
+    st.subheader("1. Venta Individual y Descuento de Stock")
     conn = get_connection()
-    df_actual = pd.read_sql_query("SELECT id, nombre, socio_asignado, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock", conn)
+    df_actual = pd.read_sql_query("SELECT id, nombre, socio_asignado, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom FROM stock", conn)
     conn.close()
 
     if not df_actual.empty:
@@ -306,6 +300,35 @@ with tab2:
                 st.rerun()
             else:
                 conn.close()
+
+        st.markdown("---")
+        st.subheader("🏷️ 2. Calculadora de Promociones (Venta de 2 o más perfumes)")
+        
+        # Selección múltiple de productos para presupuesto
+        df_actual["costo_usd"] = df_actual["costo_usd"].fillna(0.0)
+        df_actual["margen_aplicado"] = df_actual["margen_100ml_custom"].fillna(margen_100_gen)
+        df_actual["precio_100ml_ars"] = (df_actual["costo_usd"] * dolar_hoy) * (1 + (df_actual["margen_aplicado"] / 100))
+
+        prods_combo = st.multiselect("Selecciona los perfumes de 100ml que lleva el cliente:", df_actual["nombre"].tolist())
+        
+        if prods_combo:
+            subtotal = df_actual[df_actual["nombre"].isin(prods_combo)]["precio_100ml_ars"].sum()
+            cant = len(prods_combo)
+            
+            # Descuento configurable
+            pct_descuento = st.slider("Porcentaje de Descuento Especial (%)", min_value=0, max_value=30, value=10 if cant >= 2 else 0, step=5)
+            
+            monto_descuento = subtotal * (pct_descuento / 100)
+            total_final = subtotal - monto_descuento
+            
+            c_combo1, c_combo2, c_combo3 = st.columns(3)
+            with c_combo1:
+                st.metric("Subtotal Normal", f"${subtotal:,.0f} ARS")
+            with c_combo2:
+                st.metric(f"Ahorro Cliente ({pct_descuento}%)", f"-${monto_descuento:,.0f} ARS")
+            with c_combo3:
+                st.metric("Total a Cobrar", f"${total_final:,.0f} ARS")
+
     else:
         st.info("No hay productos cargados.")
 
@@ -348,7 +371,7 @@ with tab3:
                 st.error("Debes ingresar el nombre del perfume.")
 
 # ---------------------------------------------------------
-# TAB 4: Importación Automática de PDF y Cotizaciones
+# TAB 4: Importación Automática de PDF (Todos disponibles en proveedor)
 # ---------------------------------------------------------
 with tab4:
     st.header("📄 Procesar PDF del Proveedor y Ajustar Márgenes")
@@ -381,6 +404,7 @@ with tab4:
 
     st.markdown("---")
     st.subheader("📥 2. Cargar Lista en PDF del Proveedor")
+    st.info("📌 NOTA: Todos los productos leídos desde el PDF se crearán como 'Disponible en Proveedor' con 0 stock físico hasta que los compren.")
     
     socio_destinatario = st.selectbox("Asignar estos perfumes al socio:", SOCIOS)
     uploaded_pdf = st.file_uploader("Sube el PDF enviado por tu proveedor", type=["pdf"])
@@ -449,7 +473,7 @@ with tab5:
     conn.close()
 
     if not df_mod.empty:
-        opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'En Stock')}]" for _, row in df_mod.iterrows()]
+        opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'Disponible en Proveedor')}]" for _, row in df_mod.iterrows()]
         prod_seleccionado = st.selectbox("Selecciona el producto a modificar:", opciones_mod)
         id_mod = int(prod_seleccionado.split(" | ")[0].replace("ID: ", ""))
 
@@ -509,15 +533,43 @@ with tab5:
         st.info("No hay productos para editar.")
 
 # ---------------------------------------------------------
-# TAB 6: Historial de Ventas
+# TAB 6: Historial de Ventas y Gestión de Historial
 # ---------------------------------------------------------
 with tab6:
     st.header("📜 Historial de Movimientos")
     conn = get_connection()
-    df_historial = pd.read_sql_query("SELECT fecha as Fecha, perfume as Perfume, socio as 'Socio que vendió', tipo_movimiento as 'Tipo de Movimiento' FROM historial ORDER BY id DESC", conn)
+    df_historial = pd.read_sql_query("SELECT id, fecha as Fecha, perfume as Perfume, socio as 'Socio que vendió', tipo_movimiento as 'Tipo de Movimiento' FROM historial ORDER BY id DESC", conn)
     conn.close()
 
     if not df_historial.empty:
-        st.dataframe(df_historial, use_container_width=True)
+        st.dataframe(df_historial.drop(columns=['id']), use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("🗑️ Eliminar Registros del Historial")
+        
+        opciones_hist = [f"ID: {row['id']} | {row['Fecha']} - {row['Perfume']} ({row['Tipo de Movimiento']})" for _, row in df_historial.iterrows()]
+        registro_sel = st.selectbox("Selecciona un registro para eliminar:", opciones_hist)
+        id_hist_del = int(registro_sel.split(" | ")[0].replace("ID: ", ""))
+
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            if st.button("❌ Eliminar Registro Seleccionado"):
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM historial WHERE id = ?", (id_hist_del,))
+                conn.commit()
+                conn.close()
+                st.success("Registro eliminado del historial.")
+                st.rerun()
+                
+        with col_h2:
+            if st.button("🚨 VACIAR HISTORIAL COMPLETO", type="secondary"):
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM historial")
+                conn.commit()
+                conn.close()
+                st.warning("Historial vaciado completamente.")
+                st.rerun()
     else:
         st.info("Aún no hay movimientos registrados.")

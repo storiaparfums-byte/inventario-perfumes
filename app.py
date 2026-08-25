@@ -40,6 +40,7 @@ SOCIOS_WHATSAPP = {
 
 SOCIOS = list(USUARIOS_SOCIOS.keys())
 ESTADOS = ["A pedido", "En Stock", "Pedido / Señado", "Agotado"]
+CATEGORIAS = ["", "Árabe", "Diseñador", "Nicho"]
 CLAVE_ADMIN_MASTER = "1234"
 
 # Función auxiliar para formato ARS sin decimales con punto de miles ($124.497 ARS)
@@ -307,7 +308,7 @@ def generar_pdf_catalogo(df_cat):
     for _, row in df_cat.iterrows():
         data.append([
             row["nombre"],
-            row["tipo"],
+            row["tipo"] if row["tipo"] else "-",
             row["estado"],
             fmt_ars(row['precio_100ml']),
             fmt_ars(row['precio_decant'])
@@ -475,7 +476,8 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
         for _, r in df_cat_base.iterrows():
             notas_html = f'<div class="perfume-notes">🌸 <b>Notas:</b> {r["notas_olfativas"]}</div>' if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
-            
+            tipo_html = f' • <span style="color:#C5A059;">{r["tipo"]}</span>' if pd.notnull(r.get("tipo")) and str(r.get("tipo")).strip() != "" else ""
+
             p_100ml_str = fmt_ars(r['precio_100ml'])
             p_decant_str = fmt_ars(r['precio_decant'])
 
@@ -492,7 +494,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 st.markdown(f"""
                 <div class="perfume-card">
                     <div class="perfume-title">{r['nombre']}</div>
-                    <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']}</span>
+                    <span class="perfume-badge">{r['estado']}</span>{tipo_html}
                     {notas_html}
                     <div style="margin-top: 6px;">
                         <div>Frasco 100ml: <span class="perfume-price">{p_100ml_str}</span></div>
@@ -590,13 +592,14 @@ else:
                 if modo_vista == "📱 Tarjetas (Ideal Celular)":
                     for _, r in df.iterrows():
                         notas_str = f"<div><b>Notas:</b> {r['notas_olfativas']}</div>" if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
+                        tipo_str = f" ({r['tipo']})" if pd.notnull(r.get("tipo")) and str(r.get("tipo")).strip() != "" else ""
                         p_100_card = fmt_ars(r['precio_venta_100ml_ars'])
                         p_dec_card = fmt_ars(r['precio_venta_decant_10ml_ars'])
                         
                         st.markdown(f"""
                         <div class="perfume-card">
                             <div class="perfume-title">{r['nombre']}</div>
-                            <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['tipo']} ({r['socio_asignado']})</span>
+                            <span class="perfume-badge">{r['estado']}</span> • <span style="color:#C5A059;">{r['socio_asignado']}{tipo_str}</span>
                             {notas_str}
                             <div style="margin-top: 8px;">
                                 <div><b>100ml:</b> <span class="perfume-price">{p_100_card}</span> <small>({r['botellas_100ml_cerradas']} un)</small></div>
@@ -617,7 +620,7 @@ else:
                         "precio_100ml_formatted": "Precio 100ml", "precio_10ml_formatted": "Precio 10ml",
                         "socio_asignado": "Socio"
                     })
-                    st.dataframe(df_display[["ID", "Perfume", "Estado", "100ml", "Precio 100ml", "Precio 10ml", "Socio"]], use_container_width=True)
+                    st.dataframe(df_display[["ID", "Perfume", "Tipo", "Estado", "100ml", "Precio 100ml", "Precio 10ml", "Socio"]], use_container_width=True)
             else:
                 st.info("No hay perfumes registrados.")
 
@@ -730,7 +733,7 @@ else:
             st.header("➕ Cargar Producto Manual")
             with st.form("form_alta", clear_on_submit=True):
                 nombre = st.text_input("Nombre del perfume")
-                tipo = st.selectbox("Categoría", ["Árabe", "Diseñador"])
+                tipo = st.selectbox("Categoría (Opcional)", CATEGORIAS, index=0)
                 estado = st.selectbox("Estado", ESTADOS)
                 costo_usd = st.number_input("Costo USD ($)", min_value=0.0, value=0.0, step=1.0)
                 botellas = st.number_input("Botellas 100ml", min_value=0, value=1 if estado == "En Stock" else 0)
@@ -817,7 +820,7 @@ else:
                                 else:
                                     c.execute('''
                                         INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                                        VALUES (?, 'Árabe', 0, 0, 0, ?, 'A pedido', ?)
+                                        VALUES (?, '', 0, 0, 0, ?, 'A pedido', ?)
                                     ''', (r['nombre'], r['costo_usd'], socio_dest))
                                     cargados += 1
                             conn.commit()
@@ -838,9 +841,11 @@ else:
                 id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
                 prod_data = df_mod[df_mod['id'] == id_mod].iloc[0]
 
+                val_tipo = prod_data['tipo'] if pd.notnull(prod_data.get('tipo')) and prod_data['tipo'] in CATEGORIAS else ""
+
                 with st.form("form_edicion"):
                     nuevo_nombre = st.text_input("Nombre", value=prod_data['nombre'])
-                    nuevo_tipo = st.selectbox("Tipo", ["Árabe", "Diseñador"], index=0 if prod_data['tipo'] == "Árabe" else 1)
+                    nuevo_tipo = st.selectbox("Tipo", CATEGORIAS, index=CATEGORIAS.index(val_tipo))
                     nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(prod_data['estado']) if prod_data['estado'] in ESTADOS else 0)
                     nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']))
                     nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))

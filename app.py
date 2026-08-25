@@ -48,7 +48,11 @@ def cargar_datos_stock():
         ])
 
 def guardar_datos_stock(df):
-    conn.update(worksheet="stock", data=df)
+    try:
+        conn.update(worksheet="stock", data=df)
+    except Exception:
+        st.cache_data.clear()
+        conn.update(worksheet="stock", data=df)
 
 def cargar_historial():
     try:
@@ -60,7 +64,11 @@ def cargar_historial():
         return pd.DataFrame(columns=["id", "fecha", "perfume", "socio", "tipo_movimiento"])
 
 def guardar_historial(df):
-    conn.update(worksheet="historial", data=df)
+    try:
+        conn.update(worksheet="historial", data=df)
+    except Exception:
+        st.cache_data.clear()
+        conn.update(worksheet="historial", data=df)
 
 def cargar_config():
     try:
@@ -79,7 +87,11 @@ def guardar_config(dolar, m100, mdec, envase):
         "margen_decant": mdec,
         "costo_envase_decant_ars": envase
     }])
-    conn.update(worksheet="config", data=df)
+    try:
+        conn.update(worksheet="config", data=df)
+    except Exception:
+        st.cache_data.clear()
+        conn.update(worksheet="config", data=df)
 
 # ---------------------------------------------------------
 # Funciones Auxiliares

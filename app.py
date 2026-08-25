@@ -96,17 +96,17 @@ def obtener_config():
     return res if res else (1200.0, 30.0, 100.0, 800.0)
 
 def extraer_perfume_y_precio(linea):
-    """Filtro avanzado para extraer el nombre del perfume y el costo en USD exacto"""
-    # Limpiar mililitros y concentraciones comunes que confunden la lectura
-    linea_limpia = re.sub(r'(?i)\b\d+\s*(ml|gr|oz)\b', '', linea)
-    linea_limpia = re.sub(r'(?i)\b(edp|edt|parfum|cologne|extde)\b', '', linea_limpia)
+    """Extrae únicamente el nombre y el precio USD ignorando cantidades o unidades"""
+    # Limpiar unidades, ml y paréntesis que contengan números de pack/unidades
+    linea_limpia = re.sub(r'(?i)\b\d+\s*(ml|gr|oz|un|unid|unidades|edp|edt|parfum)\b', '', linea)
+    linea_limpia = re.sub(r'\(\d+\)', '', linea_limpia)
     
-    # Buscar patrón explícito de precio en USD ($XX.XX o $XX)
+    # Buscar patrón de precio con signo $
     match_precio = re.search(r'\$\s*(\d+[\.\,]?\d*)', linea_limpia)
     
     if match_precio:
         precio_str = match_precio.group(1)
-        idx_precio = linea_limpia.rfind(match_precio.group(0))
+        idx_precio = linea_limpia.find(match_precio.group(0))
         nombre = linea_limpia[:idx_precio].strip()
         try:
             precio = float(precio_str.replace(",", "."))
@@ -114,12 +114,14 @@ def extraer_perfume_y_precio(linea):
         except ValueError:
             return None, None
     else:
-        # Si no hay signo $, buscar el último número al final de la línea
+        # Si no hay signo $, toma el último valor numérico válido al final de la línea
         numeros = re.findall(r'\b\d+[\.\,]?\d*\b', linea_limpia)
         if numeros:
             precio_str = numeros[-1]
             idx_num = linea_limpia.rfind(precio_str)
             nombre = linea_limpia[:idx_num].strip()
+            # Limpiar posibles números sueltos al final del nombre
+            nombre = re.sub(r'\s+\d+$', '', nombre)
             try:
                 precio = float(precio_str.replace(",", "."))
                 return nombre, precio
@@ -224,7 +226,7 @@ with tab1:
         st.info("No hay perfumes cargados en el inventario.")
 
 # ---------------------------------------------------------
-# TAB 2: Registrar salidas, ventas y Calculadora con Descuento Manual
+# TAB 2: Registrar salidas, ventas y Calculadora con Descuento Desplegable
 # ---------------------------------------------------------
 with tab2:
     st.header("🛒 Registrar Venta y Calculadora de Promociones")
@@ -320,12 +322,24 @@ with tab2:
             subtotal = df_actual[df_actual["nombre"].isin(prods_combo)]["precio_100ml_ars"].sum()
             cant = len(prods_combo)
             
-            # Entrada manual o deslizante para porcentaje de descuento
-            col_dsc1, col_dsc2 = st.columns([1, 2])
-            with col_dsc1:
-                pct_descuento_num = st.number_input("Escribe el % de Descuento Manual:", min_value=0.0, max_value=100.0, value=10.0 if cant >= 2 else 0.0, step=1.0)
-            with col_dsc2:
-                pct_descuento = st.slider("Ajustar con barra %:", min_value=0.0, max_value=100.0, value=float(pct_descuento_num), step=1.0)
+            # Menú desplegable para porcentaje de descuento
+            opcion_desc = st.selectbox(
+                "Seleccionar Descuento Aplicable:",
+                ["Sin Descuento (0%)", "5% de Descuento", "10% de Descuento", "15% de Descuento", "20% de Descuento", "Otro % (Manual)"]
+            )
+            
+            if opcion_desc == "Sin Descuento (0%)":
+                pct_descuento = 0.0
+            elif opcion_desc == "5% de Descuento":
+                pct_descuento = 5.0
+            elif opcion_desc == "10% de Descuento":
+                pct_descuento = 10.0
+            elif opcion_desc == "15% de Descuento":
+                pct_descuento = 15.0
+            elif opcion_desc == "20% de Descuento":
+                pct_descuento = 20.0
+            else:
+                pct_descuento = st.number_input("Ingresa el % de descuento personalizado:", min_value=0.0, max_value=100.0, value=10.0, step=1.0)
 
             monto_descuento = subtotal * (pct_descuento / 100)
             total_final = subtotal - monto_descuento
@@ -380,7 +394,7 @@ with tab3:
                 st.error("Debes ingresar el nombre del perfume.")
 
 # ---------------------------------------------------------
-# TAB 4: Importación de PDF (Todos a 0 Unidades en Stock Físico)
+# TAB 4: Importación de PDF (Estricto 0 unidades en stock)
 # ---------------------------------------------------------
 with tab4:
     st.header("📄 Procesar PDF del Proveedor y Ajustar Márgenes")
@@ -413,7 +427,7 @@ with tab4:
 
     st.markdown("---")
     st.subheader("📥 2. Cargar Lista en PDF del Proveedor")
-    st.info("📌 NOTA: Todos los productos leídos del PDF se crean con 0 unidades en stock y estado 'Disponible en Proveedor'.")
+    st.info("📌 TODOS los productos del PDF se sincronizarán estrictamente con 0 unidades físicas y estado 'Disponible en Proveedor'.")
     
     socio_destinatario = st.selectbox("Asignar estos perfumes al socio:", SOCIOS)
     uploaded_pdf = st.file_uploader("Sube el PDF enviado por tu proveedor", type=["pdf"])
@@ -452,9 +466,15 @@ with tab4:
                         existe = cursor.fetchone()
 
                         if existe:
-                            cursor.execute("UPDATE stock SET costo_usd = ? WHERE id = ?", (p_costo, existe[0]))
+                            # Al actualizar el precio del PDF, forzamos que si sigue en "Disponible en Proveedor" no altere las unidades
+                            cursor.execute("""
+                                UPDATE stock 
+                                SET costo_usd = ? 
+                                WHERE id = ?
+                            """, (p_costo, existe[0]))
                             actualizados += 1
                         else:
+                            # Inserción limpia: Estrictamente 0 unidades
                             cursor.execute("""
                                 INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
                                 VALUES (?, 'Árabe', 0, 0, 0, ?, 'Disponible en Proveedor', ?)
@@ -463,7 +483,7 @@ with tab4:
 
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Sincronización completa! Se crearon {cargados} productos con 0 unidades (Disponible en Proveedor) y se actualizaron {actualizados} precios.")
+                    st.success(f"¡Sincronización realizada! Se registraron {cargados} perfumes con 0 unidades (Disponible en Proveedor) y se actualizaron {actualizados} precios.")
                     st.rerun()
             else:
                 st.warning("No se pudieron extraer precios automáticamente. Vista previa del texto extraído:")

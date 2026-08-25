@@ -95,6 +95,39 @@ def obtener_config():
     conn.close()
     return res if res else (1200.0, 30.0, 100.0, 800.0)
 
+def extraer_perfume_y_precio(linea):
+    """Limpia '100ml', '50ml', 'EDP', etc. y busca el precio en USD"""
+    # Eliminar variaciones de mililitros para no confundir 100ml con $100
+    linea_limpia = re.sub(r'(?i)\b\d+\s*(ml|gr|oz)\b', '', linea)
+    
+    # Buscar el precio en USD (formato $XX.XX, $XX o simplemente un número al final)
+    # 1. Intentar encontrar un símbolo de dólar $XX.XX o $XX
+    match_precio = re.search(r'\$\s*(\d+[\.\,]?\d*)', linea_limpia)
+    
+    if not match_precio:
+        # 2. Si no hay $, buscar el último número que aparezca en la línea
+        numeros = re.findall(r'\b\d+[\.\,]?\d*\b', linea_limpia)
+        if numeros:
+            precio_str = numeros[-1]
+            # Extraer el nombre quitando el número del final
+            idx_num = linea_limpia.rfind(precio_str)
+            nombre = linea_limpia[:idx_num].strip()
+            try:
+                precio = float(precio_str.replace(",", "."))
+                return nombre, precio
+            except ValueError:
+                return None, None
+        return None, None
+    else:
+        precio_str = match_precio.group(1)
+        idx_precio = linea_limpia.rfind(match_precio.group(0))
+        nombre = linea_limpia[:idx_precio].strip()
+        try:
+            precio = float(precio_str.replace(",", "."))
+            return nombre, precio
+        except ValueError:
+            return None, None
+
 # ---------------------------------------------------------
 # Interfaz Gráfica
 # ---------------------------------------------------------
@@ -155,7 +188,6 @@ with tab1:
         with col_f2:
             filtro_tipo = st.multiselect("Filtrar por Tipo:", df["tipo"].unique())
 
-        # Aplicar búsqueda
         if busqueda:
             df = df[df["nombre"].str.contains(busqueda, case=False, na=False)]
         if filtro_estado:
@@ -349,7 +381,6 @@ with tab4:
 
     st.markdown("---")
     st.subheader("📥 2. Cargar Lista en PDF del Proveedor")
-    st.info("Los productos importados desde el PDF se cargarán con el estado 'Disponible en Proveedor' y con 0 unidades en stock físico hasta que los compren.")
     
     socio_destinatario = st.selectbox("Asignar estos perfumes al socio:", SOCIOS)
     uploaded_pdf = st.file_uploader("Sube el PDF enviado por tu proveedor", type=["pdf"])
@@ -365,12 +396,9 @@ with tab4:
             items_encontrados = []
 
             for linea in lineas:
-                match = re.search(r'([A-Za-z0-9\s\-\']+?)\s+\$?(\d+[\.\,]?\d*)', linea)
-                if match:
-                    prod_nombre = match.group(1).strip()
-                    prod_precio = float(match.group(2).replace(",", "."))
-                    if len(prod_nombre) > 3 and prod_precio > 5:
-                        items_encontrados.append({"nombre": prod_nombre, "costo_usd": prod_precio})
+                p_nombre, p_costo = extraer_perfume_y_precio(linea)
+                if p_nombre and p_costo and len(p_nombre) > 2 and p_costo > 3:
+                    items_encontrados.append({"nombre": p_nombre, "costo_usd": p_costo})
 
             if items_encontrados:
                 df_pdf = pd.DataFrame(items_encontrados)
@@ -405,8 +433,8 @@ with tab4:
                     st.success(f"¡Sincronización completa! Se crearon {cargados} productos como 'Disponible en Proveedor' y se actualizaron {actualizados} precios.")
                     st.rerun()
             else:
-                st.warning("No se pudieron extraer precios automáticamente. Vista previa del texto:")
-                st.text_area("Contenido extraído del PDF:", texto_completo, height=250)
+                st.warning("No se pudieron extraer precios automáticamente. Vista previa del texto extraído:")
+                st.text_area("Texto extraído del PDF:", texto_completo, height=250)
 
         except Exception as e:
             st.error(f"Error procesando el PDF: {e}")
@@ -432,7 +460,6 @@ with tab5:
             nuevo_nombre = st.text_input("Nombre del Perfume", value=prod_data['nombre'])
             nuevo_tipo = st.selectbox("Tipo", ["Árabe", "Diseñador"], index=0 if prod_data['tipo'] == "Árabe" else 1)
             
-            # Editar Estado
             estado_actual = prod_data['estado'] if pd.notnull(prod_data['estado']) and prod_data['estado'] in ESTADOS else ESTADOS[0]
             nuevo_estado = st.selectbox("Estado del Perfume", ESTADOS, index=ESTADOS.index(estado_actual))
             

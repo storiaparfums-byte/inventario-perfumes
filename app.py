@@ -481,8 +481,11 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
             col_card_1, col_card_2 = st.columns([1, 3])
             with col_card_1:
-                if pd.notnull(r.get("imagen_url")) and str(r.get("imagen_url")).startswith("http"):
-                    st.image(r["imagen_url"], use_column_width=True)
+                if pd.notnull(r.get("imagen_url")) and str(r.get("imagen_url")).strip().startswith("http"):
+                    try:
+                        st.image(r["imagen_url"], use_container_width=True)
+                    except Exception:
+                        st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
                 else:
                     st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:

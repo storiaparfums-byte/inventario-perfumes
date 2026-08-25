@@ -117,6 +117,19 @@ st.markdown("""
         font-size: 1.05rem;
     }
 
+    /* Control de Tamaño de Imágenes */
+    .stImage > img {
+        max-height: 160px !important;
+        width: auto !important;
+        object-fit: contain !important;
+        margin: 0 auto !important;
+        display: block !important;
+        border-radius: 6px !important;
+        background-color: #140E0D !important;
+        padding: 4px !important;
+        border: 1px solid #3D2B27 !important;
+    }
+
     /* Botones y WhatsApp */
     .stButton>button {
         background-color: #D4AF37 !important;
@@ -333,7 +346,7 @@ def generar_pdf_catalogo(df_cat):
     buffer.seek(0)
     return buffer
 
-def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
+def generar_pdf_presupuesto(cliente, socio_vendedor, items, subtotal, descuento, total):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35)
     story = []
@@ -344,6 +357,7 @@ def generar_pdf_presupuesto(cliente, items, subtotal, descuento, total):
     story.append(Paragraph("STORIA PARFUMS", title_style))
     story.append(Spacer(1, 5))
     story.append(Paragraph(f"<b>Presupuesto para:</b> {cliente}", meta_style))
+    story.append(Paragraph(f"<b>Atendido por:</b> {socio_vendedor}", meta_style))
     story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
     story.append(Spacer(1, 15))
     
@@ -627,7 +641,17 @@ else:
         # --- SECCIÓN: PRESUPUESTOS ---
         elif seccion_admin == "📋 Crear Presupuesto":
             st.header("📋 Generar Presupuesto")
-            nombre_cliente = st.text_input("Cliente / Contacto:", value="Cliente")
+            
+            col_pr1, col_pr2 = st.columns(2)
+            with col_pr1:
+                nombre_cliente = st.text_input("Nombre del Cliente / Contacto:", value="Cliente")
+            with col_pr2:
+                socio_presupuesto = st.selectbox(
+                    "👤 Socio Vendedor (Obligatorio):", 
+                    options=SOCIOS, 
+                    index=SOCIOS.index(st.session_state.socio_autenticado)
+                )
+
             df_p = cargar_datos_stock()
             
             if not df_p.empty:
@@ -645,7 +669,7 @@ else:
                     p_sel = st.selectbox("Perfume:", df_p["nombre"].tolist())
                     pres_sel = st.selectbox("Presentación:", ["Botella 100ml", "Decant 10ml"])
                     cant_sel = st.number_input("Cantidad:", min_value=1, value=1, step=1)
-                    add_item = st.form_submit_button("➕ Agregar Item")
+                    add_item = st.form_submit_button("➕ Agregar a la Lista")
                     
                     if add_item:
                         p_data = df_p[df_p["nombre"] == p_sel].iloc[0]
@@ -657,27 +681,65 @@ else:
                         st.success(f"Agregado {p_sel}")
                         
                 if st.session_state.items_presupuesto:
+                    st.subheader("🛒 Items en el Presupuesto")
                     df_pres_view = pd.DataFrame(st.session_state.items_presupuesto)
                     df_pres_view["subtotal_fmt"] = df_pres_view["subtotal"].apply(fmt_ars)
                     st.dataframe(df_pres_view[["nombre", "presentacion", "cantidad", "subtotal_fmt"]].rename(columns={"subtotal_fmt": "Subtotal"}), use_container_width=True)
                     
+                    # Conteo de frascos de 100ml
+                    cant_100ml = sum(i["cantidad"] for i in st.session_state.items_presupuesto if i["presentacion"] == "Botella 100ml")
+                    
+                    if cant_100ml >= 2:
+                        st.info(f"🎉 **¡Promoción detectada!** El cliente lleva **{cant_100ml} frascos de 100ml**. Puedes aplicar un descuento especial a continuación.")
+
                     subtotal_pres = df_pres_view["subtotal"].sum()
-                    pct_desc_pres = st.selectbox("Descuento Promocional:", [0, 5, 10, 15, 20])
-                    monto_desc_pres = subtotal_pres * (pct_desc_pres / 100)
-                    total_pres = subtotal_pres - monto_desc_pres
+
+                    # CONFIGURACIÓN DE DESCUENTO (Lista o Manual)
+                    st.markdown("---")
+                    st.subheader("🎁 Configuración de Descuento")
                     
-                    st.metric("TOTAL FINAL", fmt_ars(total_pres))
-                    
-                    pdf_pres_bytes = generar_pdf_presupuesto(nombre_cliente, st.session_state.items_presupuesto, subtotal_pres, monto_desc_pres, total_pres)
-                    st.download_button(
-                        label="📄 Descargar Presupuesto PDF",
-                        data=pdf_pres_bytes,
-                        file_name=f"Presupuesto_{nombre_cliente}.pdf",
-                        mime="application/pdf"
+                    tipo_descuento = st.radio(
+                        "Tipo de Descuento a aplicar:",
+                        ["Descuento en Lista (%)", "Monto Fijo Manual (ARS)", "Porcentaje Personalizado (%)"],
+                        horizontal=True
                     )
-                    if st.button("🗑️ Limpiar Todo"):
-                        st.session_state.items_presupuesto = []
-                        st.rerun()
+                    
+                    monto_desc_pres = 0.0
+                    
+                    if tipo_descuento == "Descuento en Lista (%)":
+                        pct_desc = st.selectbox("Selecciona Porcentaje:", [0, 5, 10, 15, 20], index=1 if cant_100ml >= 2 else 0)
+                        monto_desc_pres = subtotal_pres * (pct_desc / 100.0)
+                    elif tipo_descuento == "Monto Fijo Manual (ARS)":
+                        monto_manual = st.number_input("Ingresa monto del descuento ($ ARS):", min_value=0.0, max_value=float(subtotal_pres), value=0.0, step=500.0)
+                        monto_desc_pres = float(monto_manual)
+                    else:
+                        pct_manual = st.number_input("Ingresa porcentaje exacto (%):", min_value=0.0, max_value=100.0, value=10.0 if cant_100ml >= 2 else 0.0, step=0.5)
+                        monto_desc_pres = subtotal_pres * (pct_manual / 100.0)
+
+                    total_pres = max(0.0, subtotal_pres - monto_desc_pres)
+                    
+                    col_tot1, col_tot2, col_tot3 = st.columns(3)
+                    with col_tot1:
+                        st.metric("Subtotal", fmt_ars(subtotal_pres))
+                    with col_tot2:
+                        st.metric("Descuento", f"-{fmt_ars(monto_desc_pres)}")
+                    with col_tot3:
+                        st.metric("TOTAL FINAL", fmt_ars(total_pres))
+                    
+                    pdf_pres_bytes = generar_pdf_presupuesto(nombre_cliente, socio_presupuesto, st.session_state.items_presupuesto, subtotal_pres, monto_desc_pres, total_pres)
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        st.download_button(
+                            label="📄 Descargar Presupuesto PDF",
+                            data=pdf_pres_bytes,
+                            file_name=f"Presupuesto_{nombre_cliente}_{socio_presupuesto}.pdf",
+                            mime="application/pdf"
+                        )
+                    with col_btn2:
+                        if st.button("🗑️ Limpiar Lista"):
+                            st.session_state.items_presupuesto = []
+                            st.rerun()
 
         # --- SECCIÓN: REGISTRAR VENTA ---
         elif seccion_admin == "🛒 Registrar Venta":
@@ -685,9 +747,17 @@ else:
             df_actual = cargar_datos_stock()
 
             if not df_actual.empty:
-                opciones = [f"ID: {row['id']} | {row['nombre']} ({row['socio_asignado']})" for _, row in df_actual.iterrows()]
-                seleccion = st.selectbox("Selecciona perfume:", opciones)
-                id_producto = int(seleccion.split(" | ")[0].replace("ID: ", ""))
+                col_v1, col_v2 = st.columns(2)
+                with col_v1:
+                    opciones = [f"ID: {row['id']} | {row['nombre']} ({row['socio_asignado']})" for _, row in df_actual.iterrows()]
+                    seleccion = st.selectbox("Selecciona perfume:", opciones)
+                    id_producto = int(seleccion.split(" | ")[0].replace("ID: ", ""))
+                with col_v2:
+                    socio_vendedor_real = st.selectbox(
+                        "👤 Socio Vendedor que realizó la venta (Obligatorio):", 
+                        options=SOCIOS, 
+                        index=SOCIOS.index(st.session_state.socio_autenticado)
+                    )
 
                 tipo_operacion = st.radio("Movimiento:", ["Venta de Botella 100ml (Cerrada)", "Venta de Decant 10ml (Listo)", "Descontar 10ml de frasco abierto (en uso)"])
 
@@ -719,10 +789,10 @@ else:
 
                     if exito:
                         c.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento) VALUES (?, ?, ?, ?)",
-                                  (fecha_actual, nombre_p, st.session_state.socio_autenticado, tipo_operacion))
+                                  (fecha_actual, nombre_p, socio_vendedor_real, tipo_operacion))
                         conn.commit()
                         conn.close()
-                        st.success("¡Venta registrada con éxito!")
+                        st.success(f"¡Venta registrada con éxito a nombre de **{socio_vendedor_real}**!")
                         st.rerun()
                     else:
                         conn.close()
@@ -909,7 +979,7 @@ else:
                 st.dataframe(df_hist.drop(columns=['id']), use_container_width=True)
                 st.markdown("---")
                 
-                opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']}" for _, row in df_hist.iterrows()]
+                opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} ({row['socio']})" for _, row in df_hist.iterrows()]
                 reg_sel = st.selectbox("Eliminar movimiento:", opciones_hist)
                 id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
 

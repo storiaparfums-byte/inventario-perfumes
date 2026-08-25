@@ -14,8 +14,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# 💡 NOMBRES REALES DE LOS SOCIOS
+# 💡 NOMBRES REALES DE LOS SOCIOS Y ESTADOS
 SOCIOS = ["Sebastián", "Franco", "Tomás"]
+ESTADOS = ["En Stock", "Pedido / Señado", "Disponible en Proveedor", "Agotado"]
 
 # ---------------------------------------------------------
 # Conexión y Gestión de Base de Datos SQLite
@@ -28,7 +29,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Tabla de Inventario con margen individual opcional
+    # Tabla de Inventario
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +40,7 @@ def init_db():
             decants_10ml_preparados INTEGER DEFAULT 0,
             costo_usd REAL DEFAULT 0.0,
             margen_100ml_custom REAL DEFAULT NULL,
+            estado TEXT DEFAULT 'En Stock',
             socio_asignado TEXT NOT NULL
         )
     """)
@@ -50,6 +52,8 @@ def init_db():
         cursor.execute("ALTER TABLE stock ADD COLUMN costo_usd REAL DEFAULT 0.0")
     if "margen_100ml_custom" not in columnas:
         cursor.execute("ALTER TABLE stock ADD COLUMN margen_100ml_custom REAL DEFAULT NULL")
+    if "estado" not in columnas:
+        cursor.execute("ALTER TABLE stock ADD COLUMN estado TEXT DEFAULT 'En Stock'")
     
     # Tabla de Configuración de Precios / Cotización
     cursor.execute("""
@@ -81,7 +85,7 @@ def init_db():
 init_db()
 
 # ---------------------------------------------------------
-# Funciones Auxiliares de Cálculo
+# Funciones Auxiliares
 # ---------------------------------------------------------
 def obtener_config():
     conn = get_connection()
@@ -108,10 +112,10 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = obtener_config()
 
 # ---------------------------------------------------------
-# TAB 1: Inventario Global y Precios
+# TAB 1: Inventario Global, Buscador y Filtro por Estado
 # ---------------------------------------------------------
 with tab1:
-    st.header("Inventario Global y Lista de Precios al Público")
+    st.header("Inventario Global y Precios")
     
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
@@ -129,6 +133,7 @@ with tab1:
 
     if not df.empty:
         df["costo_usd"] = df["costo_usd"].fillna(0.0)
+        df["estado"] = df["estado"].fillna("En Stock")
         
         df["margen_aplicado"] = df["margen_100ml_custom"].fillna(margen_100_gen)
         
@@ -137,40 +142,51 @@ with tab1:
         costo_liquido_10ml = df["costo_100ml_ars"] * 0.10
         df["precio_venta_decant_10ml_ars"] = (costo_liquido_10ml + costo_envase) * (1 + (margen_dec_gen / 100))
 
+        # 🔍 Buscador y Filtros
+        col_busqueda, col_f_est = st.columns([2, 1])
+        with col_busqueda:
+            busqueda = st.text_input("🔍 Buscar perfume por nombre:", placeholder="Ej. Club de Nuit, Khamrah...")
+        with col_f_est:
+            filtro_estado = st.multiselect("Filtrar por Estado:", df["estado"].unique(), default=[])
+
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filtro_socio = st.multiselect("Filtrar por Socio:", df["socio_asignado"].unique())
+        with col_f2:
+            filtro_tipo = st.multiselect("Filtrar por Tipo:", df["tipo"].unique())
+
+        # Aplicar búsqueda
+        if busqueda:
+            df = df[df["nombre"].str.contains(busqueda, case=False, na=False)]
+        if filtro_estado:
+            df = df[df["estado"].isin(filtro_estado)]
+        if filtro_socio:
+            df = df[df["socio_asignado"].isin(filtro_socio)]
+        if filtro_tipo:
+            df = df[df["tipo"].isin(filtro_tipo)]
+
         df_display = df.rename(columns={
             "id": "ID",
             "nombre": "Perfume",
             "tipo": "Tipo",
+            "estado": "Estado",
             "botellas_100ml_cerradas": "100ml (Cerradas)",
             "ml_disponibles_abiertos": "ml Abiertos",
             "decants_10ml_preparados": "Decants (Listos)",
             "costo_usd": "Costo USD",
-            "margen_aplicado": "Margen 100ml %",
             "precio_venta_100ml_ars": "Precio Venta 100ml (ARS)",
             "precio_venta_decant_10ml_ars": "Precio Decant 10ml (ARS)",
             "socio_asignado": "Socio a Cargo"
         })
 
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            filtro_socio = st.multiselect("Filtrar por Socio:", df_display["Socio a Cargo"].unique())
-        with col_f2:
-            filtro_tipo = st.multiselect("Filtrar por Tipo:", df_display["Tipo"].unique())
-
-        if filtro_socio:
-            df_display = df_display[df_display["Socio a Cargo"].isin(filtro_socio)]
-        if filtro_tipo:
-            df_display = df_display[df_display["Tipo"].isin(filtro_tipo)]
-
         df_display["Costo USD"] = df_display["Costo USD"].apply(lambda x: f"${x:,.2f} USD")
-        df_display["Margen 100ml %"] = df_display["Margen 100ml %"].apply(lambda x: f"{x:.0f}%")
         df_display["Precio Venta 100ml (ARS)"] = df_display["Precio Venta 100ml (ARS)"].apply(lambda x: f"${x:,.0f} ARS")
         df_display["Precio Decant 10ml (ARS)"] = df_display["Precio Decant 10ml (ARS)"].apply(lambda x: f"${x:,.0f} ARS")
 
         st.dataframe(
             df_display[[
-                "ID", "Perfume", "Tipo", "100ml (Cerradas)", "ml Abiertos", "Decants (Listos)", 
-                "Costo USD", "Margen 100ml %", "Precio Venta 100ml (ARS)", "Precio Decant 10ml (ARS)", "Socio a Cargo"
+                "ID", "Perfume", "Tipo", "Estado", "100ml (Cerradas)", "ml Abiertos", "Decants (Listos)", 
+                "Costo USD", "Precio Venta 100ml (ARS)", "Precio Decant 10ml (ARS)", "Socio a Cargo"
             ]], 
             use_container_width=True
         )
@@ -269,11 +285,12 @@ with tab3:
     with st.form("form_alta", clear_on_submit=True):
         nombre = st.text_input("Nombre del perfume y casa (ej. Lattafa Khamrah)")
         tipo = st.selectbox("Categoría / Tipo", ["Árabe", "Diseñador"])
+        estado = st.selectbox("Estado inicial del producto", ESTADOS)
         costo_usd = st.number_input("Costo de compra en USD ($)", min_value=0.0, value=0.0, step=1.0)
         
         col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
-            botellas = st.number_input("Botellas 100ml cerradas", min_value=0, value=1, step=1)
+            botellas = st.number_input("Botellas 100ml cerradas", min_value=0, value=1 if estado == "En Stock" else 0, step=1)
         with col_c2:
             ml_abiertos = st.number_input("ml en frasco abierto (0-100ml)", min_value=0, max_value=100, value=0)
         with col_c3:
@@ -288,12 +305,12 @@ with tab3:
                 conn = get_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, socio_asignado)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, socio))
+                    INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (nombre.strip(), tipo, botellas, ml_abiertos, decants, costo_usd, estado, socio))
                 conn.commit()
                 conn.close()
-                st.success(f"¡'{nombre}' fue agregado correctamente!")
+                st.success(f"¡'{nombre}' fue agregado correctamente como '{estado}'!")
                 st.rerun()
             else:
                 st.error("Debes ingresar el nombre del perfume.")
@@ -331,9 +348,10 @@ with tab4:
             st.rerun()
 
     st.markdown("---")
-    st.subheader("📥 2. Cargar Lista en PDF y Sincronizar Stock Automáticamente")
+    st.subheader("📥 2. Cargar Lista en PDF del Proveedor")
+    st.info("Los productos importados desde el PDF se cargarán con el estado 'Disponible en Proveedor' y con 0 unidades en stock físico hasta que los compren.")
     
-    socio_destinatario = st.selectbox("Asignar nuevos productos del PDF al socio:", SOCIOS)
+    socio_destinatario = st.selectbox("Asignar estos perfumes al socio:", SOCIOS)
     uploaded_pdf = st.file_uploader("Sube el PDF enviado por tu proveedor", type=["pdf"])
 
     if uploaded_pdf is not None:
@@ -359,7 +377,7 @@ with tab4:
                 st.write(f"Se detectaron **{len(df_pdf)}** perfumes en el PDF:")
                 st.dataframe(df_pdf, use_container_width=True)
 
-                if st.button("🚀 Sincronizar / Cargar todo este PDF al Inventario", type="primary"):
+                if st.button("🚀 Sincronizar catálogo del PDF con el Inventario", type="primary"):
                     conn = get_connection()
                     cursor = conn.cursor()
                     cargados = 0
@@ -377,14 +395,14 @@ with tab4:
                             actualizados += 1
                         else:
                             cursor.execute("""
-                                INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, socio_asignado)
-                                VALUES (?, 'Árabe', 1, 0, 0, ?, ?)
+                                INSERT INTO stock (nombre, tipo, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                                VALUES (?, 'Árabe', 0, 0, 0, ?, 'Disponible en Proveedor', ?)
                             """, (p_nom, p_costo, socio_destinatario))
                             cargados += 1
 
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Sincronización completa! Se crearon {cargados} perfumes nuevos y se actualizaron los precios de {actualizados} existentes.")
+                    st.success(f"¡Sincronización completa! Se crearon {cargados} productos como 'Disponible en Proveedor' y se actualizaron {actualizados} precios.")
                     st.rerun()
             else:
                 st.warning("No se pudieron extraer precios automáticamente. Vista previa del texto:")
@@ -394,16 +412,16 @@ with tab4:
             st.error(f"Error procesando el PDF: {e}")
 
 # ---------------------------------------------------------
-# TAB 5: Editar o Eliminar y Cambiar Márgenes Individuales
+# TAB 5: Editar Estado, Stock y Detalles del Producto
 # ---------------------------------------------------------
 with tab5:
-    st.header("✏️ Modificar Producto y Margen Individual")
+    st.header("✏️ Modificar Producto, Estado o Stock")
     conn = get_connection()
     df_mod = pd.read_sql_query("SELECT * FROM stock", conn)
     conn.close()
 
     if not df_mod.empty:
-        opciones_mod = [f"ID: {row['id']} | {row['nombre']}" for _, row in df_mod.iterrows()]
+        opciones_mod = [f"ID: {row['id']} | {row['nombre']} [{row.get('estado', 'En Stock')}]" for _, row in df_mod.iterrows()]
         prod_seleccionado = st.selectbox("Selecciona el producto a modificar:", opciones_mod)
         id_mod = int(prod_seleccionado.split(" | ")[0].replace("ID: ", ""))
 
@@ -413,11 +431,16 @@ with tab5:
         with st.form("form_edicion"):
             nuevo_nombre = st.text_input("Nombre del Perfume", value=prod_data['nombre'])
             nuevo_tipo = st.selectbox("Tipo", ["Árabe", "Diseñador"], index=0 if prod_data['tipo'] == "Árabe" else 1)
+            
+            # Editar Estado
+            estado_actual = prod_data['estado'] if pd.notnull(prod_data['estado']) and prod_data['estado'] in ESTADOS else ESTADOS[0]
+            nuevo_estado = st.selectbox("Estado del Perfume", ESTADOS, index=ESTADOS.index(estado_actual))
+            
             costo_val = float(prod_data['costo_usd']) if pd.notnull(prod_data['costo_usd']) else 0.0
             nuevo_costo = st.number_input("Costo USD ($)", min_value=0.0, value=costo_val, step=1.0)
             
             margen_actual_val = float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen)
-            nuevo_margen_indiv = st.number_input("Margen de Ganancia 100ml % (Personalizado para este perfume)", min_value=0.0, value=margen_actual_val, step=5.0)
+            nuevo_margen_indiv = st.number_input("Margen 100ml % (Personalizado)", min_value=0.0, value=margen_actual_val, step=5.0)
 
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -437,9 +460,9 @@ with tab5:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE stock 
-                    SET nombre = ?, tipo = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, costo_usd = ?, margen_100ml_custom = ?, socio_asignado = ?
+                    SET nombre = ?, tipo = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, costo_usd = ?, margen_100ml_custom = ?, estado = ?, socio_asignado = ?
                     WHERE id = ?
-                """, (nuevo_nombre, nuevo_tipo, nuevas_botellas, nuevos_ml, nuevas_decants, nuevo_costo, nuevo_margen_indiv, nuevo_socio, id_mod))
+                """, (nuevo_nombre, nuevo_tipo, nuevas_botellas, nuevos_ml, nuevos_decants, nuevo_costo, nuevo_margen_indiv, nuevo_estado, nuevo_socio, id_mod))
                 conn.commit()
                 conn.close()
                 st.success("¡Perfume actualizado con éxito!")

@@ -133,6 +133,16 @@ st.markdown("""
         font-weight: bold;
         font-size: 1.05rem;
     }
+    .stock-badge-green {
+        color: #4EAD5B;
+        font-size: 0.82rem;
+        font-weight: bold;
+    }
+    .stock-badge-red {
+        color: #E55353;
+        font-size: 0.82rem;
+        font-weight: bold;
+    }
 
     /* Control de Tamaño de Imágenes */
     .stImage > img {
@@ -573,6 +583,10 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
         df_cat_base["costo_usd"] = pd.to_numeric(df_cat_base["costo_usd"], errors='coerce').fillna(0.0)
         df_cat_base["capacidad_ml"] = pd.to_numeric(df_cat_base["capacidad_ml"], errors='coerce').fillna(100).astype(int)
+        df_cat_base["decants_10ml_preparados"] = pd.to_numeric(df_cat_base["decants_10ml_preparados"], errors='coerce').fillna(0).astype(int)
+        df_cat_base["botellas_100ml_cerradas"] = pd.to_numeric(df_cat_base["botellas_100ml_cerradas"], errors='coerce').fillna(0).astype(int)
+        df_cat_base["ml_disponibles_abiertos"] = pd.to_numeric(df_cat_base["ml_disponibles_abiertos"], errors='coerce').fillna(0).astype(int)
+
         df_cat_base["margen_100ml_custom"] = pd.to_numeric(df_cat_base["margen_100ml_custom"], errors='coerce')
         df_cat_base["margen_aplicado"] = df_cat_base["margen_100ml_custom"].fillna(margen_100_gen)
         
@@ -641,6 +655,17 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             p_100ml_str = fmt_ars(r['precio_100ml'])
             p_decant_str = fmt_ars(r['precio_decant'])
             cap_ml = r.get("capacidad_ml", 100)
+            cnt_decants = r.get("decants_10ml_preparados", 0)
+            cnt_frascos = r.get("botellas_100ml_cerradas", 0)
+            cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
+
+            # Badge de Stock para Decant en Catálogo
+            if cnt_decants > 0:
+                stock_dec_html = f'<span class="stock-badge-green"> (🔥 {cnt_decants} decants en stock)</span>'
+            elif cnt_frascos > 0 or cnt_ml_ab >= 10:
+                stock_dec_html = '<span class="stock-badge-green"> (Disponible a pedido)</span>'
+            else:
+                stock_dec_html = '<span class="stock-badge-red"> (Agotado)</span>'
 
             # Estado Badge
             estado_class = "perfume-badge badge-senado" if r['estado'] == "Pedido / Señado" else "perfume-badge"
@@ -655,7 +680,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 else:
                     st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:
-                card_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="{estado_class}">{r["estado"]}</span>{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span></div></div></div>'
+                card_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="{estado_class}">{r["estado"]}</span>{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
                 st.markdown(card_html, unsafe_allow_html=True)
     else:
         st.info("No hay fragancias disponibles en el catálogo.")
@@ -1027,7 +1052,6 @@ else:
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
                                     
-                                    # Guardar Venta en Historial registrando el ingreso en pesos
                                     c.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars) VALUES (?, ?, ?, ?, ?)",
                                               (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", item['subtotal']))
 
@@ -1110,7 +1134,6 @@ else:
             st.header("📊 Contabilidad, Gastos y Balance de Caja")
             st.info("💡 Lleva el control contable completo registrando egresos operativos (envases, bolsas, tarjetas, etiquetas, envíos) y comparándolos con los ingresos de ventas para ver la **Ganancia Neta Real**.")
 
-            # Formulario para registrar un nuevo egreso / gasto
             with st.expander("➕ Registrar Nuevo Gasto / Egreso"):
                 with st.form("form_egreso", clear_on_submit=True):
                     col_eg1, col_eg2 = st.columns(2)
@@ -1134,7 +1157,6 @@ else:
                         st.rerun()
 
             st.markdown("---")
-            # Cargar ventas y egresos
             df_hist_c = cargar_historial()
             df_eg_c = cargar_egresos()
 
@@ -1142,7 +1164,6 @@ else:
             total_egresos = df_eg_c["monto_ars"].sum() if not df_eg_c.empty else 0.0
             ganancia_neta = total_ingresos - total_egresos
 
-            # Resumen Metrico
             col_m1, col_m2, col_m3 = st.columns(3)
             with col_m1:
                 st.metric("🟢 Ingresos Totales (Ventas)", fmt_ars(total_ingresos))
@@ -1224,13 +1245,11 @@ else:
                         st.success(f"Agregado {nom_nuevo_oc} a la orden.")
                         st.rerun()
 
-            # Resumen y Generación de PDF de Orden de Compra
             if st.session_state.items_oc:
                 st.markdown("---")
                 st.subheader("📝 Resumen de la Orden de Compra")
                 df_oc_view = pd.DataFrame(st.session_state.items_oc)
                 
-                # Cálculos de sugerencia de precio de venta público
                 df_oc_view["costo_ars"] = df_oc_view["costo_usd"] * dolar_hoy
                 df_oc_view["precio_venta_sugerido"] = df_oc_view["costo_ars"] * (1 + (margen_100_gen / 100))
                 df_oc_view["precio_sugerido_fmt"] = df_oc_view["precio_venta_sugerido"].apply(fmt_ars)
@@ -1380,7 +1399,7 @@ else:
 
         # --- SECCIÓN: EDITAR / ELIMINAR ---
         elif seccion_admin == "✏️ Editar / Eliminar":
-            st.header("✏️ Editar Estado, Stock & Reserva de Perfumes")
+            st.header("✏️ Editar Estado, Stock & Decants de Perfumes")
             df_mod = cargar_datos_stock()
 
             if not df_mod.empty:
@@ -1392,6 +1411,7 @@ else:
                 val_tipo = prod_data['tipo'] if pd.notnull(prod_data.get('tipo')) and prod_data['tipo'] in CATEGORIAS else ""
                 val_socio_reserva = prod_data['socio_asignado'] if pd.notnull(prod_data.get('socio_asignado')) and prod_data['socio_asignado'] in SOCIOS else ""
                 val_cap = int(prod_data.get('capacidad_ml', 100))
+                val_decants = int(prod_data.get('decants_10ml_preparados', 0))
 
                 with st.form("form_edicion"):
                     nuevo_nombre = st.text_input("Nombre", value=prod_data['nombre'])
@@ -1412,14 +1432,14 @@ else:
                             index=([""] + SOCIOS).index(val_socio_reserva) if val_socio_reserva in SOCIOS else 0
                         )
                     with col_ed_s2:
-                        ndec = st.number_input("Cantidad Decants 10ml Señados / En Stock:", min_value=0, value=int(prod_data['decants_10ml_preparados']))
+                        ndec = st.number_input("🧪 Cantidad Decants 10ml en Stock / Listos:", min_value=0, value=val_decants)
 
                     nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']))
                     nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))
                     
                     col_ed_b1, col_ed_b2 = st.columns(2)
                     with col_ed_b1:
-                        nbot = st.number_input("Frascos Cerrados", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
+                        nbot = st.number_input("Frascos Cerrados en Stock", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
                     with col_ed_b2:
                         nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=nueva_capacidad, value=int(prod_data['ml_disponibles_abiertos']))
                     
@@ -1429,7 +1449,7 @@ else:
                     nuevas_notas = st.text_input("Notas Olfativas", value=str(val_notas))
                     nueva_img = st.text_input("URL Imagen", value=str(val_img))
 
-                    if st.form_submit_button("Guardar Cambios"):
+                    if st.form_submit_button("💾 Guardar Cambios de Stock"):
                         conn = sqlite3.connect('inventario.db')
                         c = conn.cursor()
                         c.execute('''
@@ -1441,7 +1461,7 @@ else:
                         ''', (nuevo_nombre, nuevo_tipo, nueva_capacidad, nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, socio_reserva_sel, nuevas_notas, nueva_img, id_mod))
                         conn.commit()
                         conn.close()
-                        st.success("Guardado.")
+                        st.success("¡Stock y datos del perfume actualizados correctamente!")
                         st.rerun()
 
                 st.markdown("---")

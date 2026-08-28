@@ -6,6 +6,7 @@ import pypdf
 import re
 import io
 import urllib.parse
+import math
 
 # Librerías para generación de PDF profesional
 from reportlab.lib.pagesizes import letter
@@ -44,7 +45,6 @@ SOCIOS_WHATSAPP = {
 SOCIOS = list(USUARIOS_SOCIOS.keys())
 ESTADOS = ["En Stock", "A pedido", "Pedido / Señado", "Agotado"]
 
-# MARCAS Y CATEGORÍAS EXTENDIDAS
 CATEGORIAS = [
     "", 
     "Maison Alhambra", "Lattafa", "Armaf", "Al Haramain", "Rasasi", 
@@ -55,7 +55,16 @@ CATEGORIAS = [
 
 CLAVE_ADMIN_MASTER = "1234"
 
-# Función auxiliar para formato ARS sin decimales con punto de miles ($124.497 ARS)
+# ---------------------------------------------------------
+# FUNCIÓN DE REDONDEO A NÚMEROS REDONDOS ($100 ARS)
+# ---------------------------------------------------------
+def redondear_monto(monto, base=100):
+    try:
+        val = float(monto)
+        return round(val / base) * base
+    except (ValueError, TypeError):
+        return 0.0
+
 def fmt_ars(monto):
     try:
         return f"${int(round(float(monto))):,}".replace(",", ".") + " ARS"
@@ -597,12 +606,14 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base["margen_aplicado"] = df_cat_base["margen_100ml_custom"].fillna(margen_100_gen)
         
         df_cat_base["costo_ars"] = df_cat_base["costo_usd"] * dolar_hoy
-        df_cat_base["precio_100ml"] = df_cat_base["costo_ars"] * (1 + (df_cat_base["margen_aplicado"] / 100))
+        df_cat_base["precio_100ml_raw"] = df_cat_base["costo_ars"] * (1 + (df_cat_base["margen_aplicado"] / 100))
+        df_cat_base["precio_100ml"] = df_cat_base["precio_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
         
         df_cat_base["costo_liquido_10ml"] = df_cat_base.apply(
             lambda r: (r["costo_ars"] / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_ars"] * 0.10), axis=1
         )
-        df_cat_base["precio_decant"] = (df_cat_base["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+        df_cat_base["precio_decant_raw"] = (df_cat_base["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+        df_cat_base["precio_decant"] = df_cat_base["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
         # --- SELECCIÓN INTERACTIVA DE CONSULTA POR PERFUMES ---
         st.subheader("💡 ¿Te interesa alguna fragancia?")
@@ -775,7 +786,6 @@ else:
                             WHERE nombre = ?
                         ''', (socio_senia_sel, monto_senia_val, cli_senia_nom.strip(), p_senia_sel))
                         
-                        # Registrar el ingreso parcial de la seña en la contabilidad
                         f_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         c.execute('''
                             INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars)
@@ -834,12 +844,14 @@ else:
                 df["margen_aplicado"] = df["margen_100ml_custom"].fillna(margen_100_gen)
                 
                 df["costo_100ml_ars"] = df["costo_usd"] * dolar_hoy
-                df["precio_venta_100ml_ars"] = df["costo_100ml_ars"] * (1 + (df["margen_aplicado"] / 100))
+                df["precio_venta_100ml_raw"] = df["costo_100ml_ars"] * (1 + (df["margen_aplicado"] / 100))
+                df["precio_venta_100ml_ars"] = df["precio_venta_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
                 
                 df["costo_liquido_10ml"] = df.apply(
                     lambda r: (r["costo_100ml_ars"] / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_100ml_ars"] * 0.10), axis=1
                 )
-                df["precio_venta_decant_10ml_ars"] = (df["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df["precio_venta_decant_raw"] = (df["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df["precio_venta_decant_10ml_ars"] = df["precio_venta_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
                 col_s1, col_s2, col_s3 = st.columns(3)
                 with col_s1:
@@ -917,12 +929,15 @@ else:
                 df_p["margen_100ml_custom"] = pd.to_numeric(df_p["margen_100ml_custom"], errors='coerce')
                 df_p["margen"] = df_p["margen_100ml_custom"].fillna(margen_100_gen)
                 
-                df_p["precio_100ml"] = (df_p["costo_usd"] * dolar_hoy) * (1 + (df_p["margen"] / 100))
+                df_p["precio_100ml_raw"] = (df_p["costo_usd"] * dolar_hoy) * (1 + (df_p["margen"] / 100))
+                df_p["precio_100ml"] = df_p["precio_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
+                
                 df_p["costo_liquido_10ml"] = df_p.apply(
                     lambda r: ((r["costo_usd"] * dolar_hoy) / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_usd"] * dolar_hoy * 0.10), axis=1
                 )
-                df_p["precio_decant"] = (df_p["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
-                
+                df_p["precio_decant_raw"] = (df_p["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df_p["precio_decant"] = df_p["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
+
                 if "items_presupuesto" not in st.session_state:
                     st.session_state.items_presupuesto = []
                     
@@ -941,7 +956,7 @@ else:
                     
                     if add_item:
                         p_unit_base = p_data_temp["precio_100ml"] if "Frasco" in pres_sel else p_data_temp["precio_decant"]
-                        p_unit_final = max(0.0, p_unit_base - desc_individual)
+                        p_unit_final = redondear_monto(max(0.0, p_unit_base - desc_individual), 100)
                         st.session_state.items_presupuesto.append({
                             "nombre": p_sel, "presentacion": pres_sel,
                             "cantidad": cant_sel, "precio_unitario": p_unit_final, "subtotal": p_unit_final * cant_sel
@@ -977,7 +992,7 @@ else:
                         pct_manual = st.number_input("Ingresa porcentaje exacto (%):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
                         monto_desc_pres = subtotal_pres * (pct_manual / 100.0)
 
-                    total_pres = max(0.0, subtotal_pres - monto_desc_pres)
+                    total_pres = redondear_monto(max(0.0, subtotal_pres - monto_desc_pres), 100)
                     
                     col_tot1, col_tot2, col_tot3 = st.columns(3)
                     with col_tot1:
@@ -1002,7 +1017,7 @@ else:
                             st.session_state.items_presupuesto = []
                             st.rerun()
 
-        # --- SECCIÓN: REGISTRAR VENTA (CON CORRECCIÓN DE STOCK Y COBRO REAL) ---
+        # --- SECCIÓN: REGISTRAR VENTA ---
         elif seccion_admin == "🛒 Registrar Venta":
             st.header("🛒 Registrar Venta Multi-Item")
             
@@ -1026,11 +1041,14 @@ else:
                 df_actual["margen_100ml_custom"] = pd.to_numeric(df_actual["margen_100ml_custom"], errors='coerce')
                 df_actual["margen"] = df_actual["margen_100ml_custom"].fillna(margen_100_gen)
                 
-                df_actual["precio_100ml"] = (df_actual["costo_usd"] * dolar_hoy) * (1 + (df_actual["margen"] / 100))
+                df_actual["precio_100ml_raw"] = (df_actual["costo_usd"] * dolar_hoy) * (1 + (df_actual["margen"] / 100))
+                df_actual["precio_100ml"] = df_actual["precio_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
+                
                 df_actual["costo_liquido_10ml"] = df_actual.apply(
                     lambda r: ((r["costo_usd"] * dolar_hoy) / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_usd"] * dolar_hoy * 0.10), axis=1
                 )
-                df_actual["precio_decant"] = (df_actual["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df_actual["precio_decant_raw"] = (df_actual["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df_actual["precio_decant"] = df_actual["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
                 if "items_venta" not in st.session_state:
                     st.session_state.items_venta = []
@@ -1052,7 +1070,7 @@ else:
 
                     if add_vitem:
                         p_unit_base = p_data_v["precio_100ml"] if "Frasco" in pres_sel_v else p_data_v["precio_decant"]
-                        p_unit_final = max(0.0, p_unit_base - desc_ind_v)
+                        p_unit_final = redondear_monto(max(0.0, p_unit_base - desc_ind_v), 100)
                         
                         st.session_state.items_venta.append({
                             "id_producto": int(p_data_v["id"]),
@@ -1074,7 +1092,6 @@ else:
 
                     subtotal_v = df_v_view["subtotal"].sum()
 
-                    # DESCUENTO GENERAL VENTA
                     st.subheader("🎁 Descuento General sobre Total de Venta")
                     tipo_desc_v = st.radio(
                         "Tipo de Descuento General:",
@@ -1089,7 +1106,7 @@ else:
                         pct_v = st.number_input("Porcentaje (%):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
                         monto_desc_v = subtotal_v * (pct_v / 100.0)
 
-                    total_v = max(0.0, subtotal_v - monto_desc_v)
+                    total_v = redondear_monto(max(0.0, subtotal_v - monto_desc_v), 100)
 
                     col_vtot1, col_vtot2, col_vtot3 = st.columns(3)
                     with col_vtot1:
@@ -1109,7 +1126,6 @@ else:
                             fecha_actual = datetime.now()
                             fecha_actual_str = fecha_actual.strftime("%Y-%m-%d %H:%M:%S")
 
-                            # Proporción de descuento general
                             factor_descuento = (total_v / subtotal_v) if subtotal_v > 0 else 1.0
 
                             for item in st.session_state.items_venta:
@@ -1122,8 +1138,7 @@ else:
                                     cant = item["cantidad"]
                                     pres = item["presentacion"]
 
-                                    # Cálculo exacto del monto ingresado con descuento aplicado
-                                    monto_cobrado_real_item = item['subtotal'] * factor_descuento
+                                    monto_cobrado_real_item = redondear_monto(item['subtotal'] * factor_descuento, 100)
 
                                     if "Frasco" in pres:
                                         nuevas_botellas = max(0, botellas - cant)
@@ -1155,11 +1170,9 @@ else:
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
                                     
-                                    # Registrar el MONTO REAL COBRADO CON DESCUENTO
                                     c.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars) VALUES (?, ?, ?, ?, ?)",
                                               (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", monto_cobrado_real_item))
 
-                                    # Agendar en CRM Seguimiento
                                     dias_u = item.get("dias_estimados", 90)
                                     fecha_rec = (fecha_actual + timedelta(days=dias_u)).strftime("%Y-%m-%d")
                                     c.execute('''
@@ -1355,7 +1368,7 @@ else:
                 df_oc_view = pd.DataFrame(st.session_state.items_oc)
                 
                 df_oc_view["costo_ars"] = df_oc_view["costo_usd"] * dolar_hoy
-                df_oc_view["precio_venta_sugerido"] = df_oc_view["costo_ars"] * (1 + (margen_100_gen / 100))
+                df_oc_view["precio_venta_sugerido"] = df_oc_view["costo_ars"].apply(lambda c: redondear_monto(c * (1 + (margen_100_gen / 100)), 100))
                 df_oc_view["precio_sugerido_fmt"] = df_oc_view["precio_venta_sugerido"].apply(fmt_ars)
                 
                 st.dataframe(df_oc_view[["nombre", "capacidad_ml", "cantidad", "costo_usd", "subtotal_usd", "precio_sugerido_fmt"]].rename(columns={"precio_sugerido_fmt": "PVP Sugerido ARS"}), use_container_width=True)

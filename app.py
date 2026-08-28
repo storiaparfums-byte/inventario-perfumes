@@ -1002,7 +1002,7 @@ else:
                             st.session_state.items_presupuesto = []
                             st.rerun()
 
-        # --- SECCIÓN: REGISTRAR VENTA ---
+        # --- SECCIÓN: REGISTRAR VENTA (CON CORRECCIÓN DE STOCK Y COBRO REAL) ---
         elif seccion_admin == "🛒 Registrar Venta":
             st.header("🛒 Registrar Venta Multi-Item")
             
@@ -1052,9 +1052,6 @@ else:
 
                     if add_vitem:
                         p_unit_base = p_data_v["precio_100ml"] if "Frasco" in pres_sel_v else p_data_v["precio_decant"]
-                        
-                        # Si el producto estaba señado, restar la seña del precio si corresponde
-                        m_senado_p = float(p_data_v.get("monto_senado_ars", 0.0))
                         p_unit_final = max(0.0, p_unit_base - desc_ind_v)
                         
                         st.session_state.items_venta.append({
@@ -1064,8 +1061,7 @@ else:
                             "cantidad": cant_sel_v,
                             "precio_unitario": p_unit_final,
                             "subtotal": p_unit_final * cant_sel_v,
-                            "dias_estimados": dias_estimados_uso,
-                            "monto_senia_previa": m_senado_p
+                            "dias_estimados": dias_estimados_uso
                         })
                         st.success(f"Agregado {p_sel_v}")
 
@@ -1074,7 +1070,7 @@ else:
                     st.subheader("🛒 Resumen de la Venta a Confirmar")
                     df_v_view = pd.DataFrame(st.session_state.items_venta)
                     df_v_view["subtotal_fmt"] = df_v_view["subtotal"].apply(fmt_ars)
-                    st.dataframe(df_v_view[["nombre", "presentacion", "cantidad", "subtotal_fmt"]].rename(columns={"subtotal_fmt": "Subtotal"}), use_container_width=True)
+                    st.dataframe(df_v_view[["nombre", "presentacion", "cantidad", "subtotal_fmt"]].rename(columns={"subtotal_fmt": "Subtotal con Desc. Ind."}), use_container_width=True)
 
                     subtotal_v = df_v_view["subtotal"].sum()
 
@@ -1101,7 +1097,7 @@ else:
                     with col_vtot2:
                         st.metric("Descuento Total", f"-{fmt_ars(monto_desc_v)}")
                     with col_vtot3:
-                        st.metric("TOTAL A COBRAR", fmt_ars(total_v))
+                        st.metric("TOTAL REAL A COBRAR", fmt_ars(total_v))
 
                     st.markdown("---")
                     col_vbtn1, col_vbtn2 = st.columns(2)
@@ -1113,6 +1109,9 @@ else:
                             fecha_actual = datetime.now()
                             fecha_actual_str = fecha_actual.strftime("%Y-%m-%d %H:%M:%S")
 
+                            # Proporción de descuento general
+                            factor_descuento = (total_v / subtotal_v) if subtotal_v > 0 else 1.0
+
                             for item in st.session_state.items_venta:
                                 id_p = item["id_producto"]
                                 c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = ?", (id_p,))
@@ -1123,21 +1122,42 @@ else:
                                     cant = item["cantidad"]
                                     pres = item["presentacion"]
 
-                                    if "Frasco" in pres and botellas >= cant:
-                                        c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, estado = 'En Stock', monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (botellas - cant, id_p))
-                                    elif "Listo" in pres and decants >= cant:
-                                        c.execute("UPDATE stock SET decants_10ml_preparados = ?, estado = 'En Stock', monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (decants - cant, id_p))
+                                    # Cálculo exacto del monto ingresado con descuento aplicado
+                                    monto_cobrado_real_item = item['subtotal'] * factor_descuento
+
+                                    if "Frasco" in pres:
+                                        nuevas_botellas = max(0, botellas - cant)
+                                        nuevo_est = "En Stock" if (nuevas_botellas > 0 or decants > 0) else "Agotado"
+                                        c.execute('''
+                                            UPDATE stock 
+                                            SET botellas_100ml_cerradas = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
+                                            WHERE id = ?
+                                        ''', (nuevas_botellas, nuevo_est, id_p))
+
+                                    elif "Listo" in pres:
+                                        nuevos_decants = max(0, decants - cant)
+                                        nuevo_est = "En Stock" if (botellas > 0 or nuevos_decants > 0) else "Agotado"
+                                        c.execute('''
+                                            UPDATE stock 
+                                            SET decants_10ml_preparados = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
+                                            WHERE id = ?
+                                        ''', (nuevos_decants, nuevo_est, id_p))
+
                                     elif "abierto" in pres:
                                         ml_necesarios = cant * 10
                                         if ml >= ml_necesarios:
-                                            c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock', monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (ml - ml_necesarios, id_p))
+                                            c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (ml - ml_necesarios, id_p))
                                         elif botellas > 0:
-                                            c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, estado = 'En Stock', monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (botellas - 1, ml + cap_tot - ml_necesarios, id_p))
+                                            nuevas_bot = botellas - 1
+                                            nuevos_ml = ml + cap_tot - ml_necesarios
+                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml > 0) else "Agotado"
+                                            c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, estado = ? WHERE id = ?", (nuevas_bot, nuevos_ml, nuevo_est, id_p))
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
                                     
+                                    # Registrar el MONTO REAL COBRADO CON DESCUENTO
                                     c.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars) VALUES (?, ?, ?, ?, ?)",
-                                              (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", item['subtotal']))
+                                              (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", monto_cobrado_real_item))
 
                                     # Agendar en CRM Seguimiento
                                     dias_u = item.get("dias_estimados", 90)
@@ -1150,7 +1170,7 @@ else:
                             conn.commit()
                             conn.close()
                             st.session_state.items_venta = []
-                            st.success(f"¡Venta registrada con éxito!")
+                            st.success(f"¡Venta registrada con éxito y stock descontado!")
                             st.rerun()
 
                     with col_vbtn2:

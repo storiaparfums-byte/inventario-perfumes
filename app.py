@@ -333,12 +333,16 @@ def cargar_historial():
     conn = sqlite3.connect('inventario.db')
     df = pd.read_sql_query("SELECT * FROM historial ORDER BY id DESC", conn)
     conn.close()
+    if not df.empty and "fecha" in df.columns:
+        df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
 def cargar_egresos():
     conn = sqlite3.connect('inventario.db')
     df = pd.read_sql_query("SELECT * FROM egresos ORDER BY id DESC", conn)
     conn.close()
+    if not df.empty and "fecha" in df.columns:
+        df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
 def cargar_seguimiento():
@@ -758,7 +762,7 @@ else:
 
         st.sidebar.caption(f"💵 Dólar: **{fmt_ars(dolar_hoy)}**")
 
-        # --- SECCIÓN: REGISTRAR SEÑA / RESERVA (MÓDULO RÁPIDO) ---
+        # --- SECCIÓN: REGISTRAR SEÑA / RESERVA ---
         if seccion_admin == "📌 Registrar Seña / Reserva":
             st.header("📌 Registrar Seña o Reserva de Producto")
             st.info("💡 Utiliza esta sección para reservar rápidamente un perfume o decant cuando un cliente entrega un dinero como seña. Quedará apartado en el catálogo para que ningún otro socio lo venda por error.")
@@ -1079,7 +1083,8 @@ else:
                             "cantidad": cant_sel_v,
                             "precio_unitario": p_unit_final,
                             "subtotal": p_unit_final * cant_sel_v,
-                            "dias_estimados": dias_estimados_uso
+                            "dias_estimados": dias_estimados_uso,
+                            "capacidad_ml": cap_v
                         })
                         st.success(f"Agregado {p_sel_v}")
 
@@ -1130,6 +1135,7 @@ else:
 
                             for item in st.session_state.items_venta:
                                 id_p = item["id_producto"]
+                                cap_prod = item.get("capacidad_ml", 100)
                                 c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = ?", (id_p,))
                                 row_stock = c.fetchone()
                                 
@@ -1142,7 +1148,11 @@ else:
 
                                     if "Frasco" in pres:
                                         nuevas_botellas = max(0, botellas - cant)
-                                        nuevo_est = "En Stock" if (nuevas_botellas > 0 or decants > 0) else "Agotado"
+                                        if nuevas_botellas == 0:
+                                            nuevo_est = "A pedido"
+                                        else:
+                                            nuevo_est = "En Stock"
+                                            
                                         c.execute('''
                                             UPDATE stock 
                                             SET botellas_100ml_cerradas = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
@@ -1151,7 +1161,11 @@ else:
 
                                     elif "Listo" in pres:
                                         nuevos_decants = max(0, decants - cant)
-                                        nuevo_est = "En Stock" if (botellas > 0 or nuevos_decants > 0) else "Agotado"
+                                        if nuevos_decants == 0 and botellas == 0:
+                                            nuevo_est = "A pedido" if cap_tot > 10 else "Agotado"
+                                        else:
+                                            nuevo_est = "En Stock"
+                                            
                                         c.execute('''
                                             UPDATE stock 
                                             SET decants_10ml_preparados = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
@@ -1165,7 +1179,7 @@ else:
                                         elif botellas > 0:
                                             nuevas_bot = botellas - 1
                                             nuevos_ml = ml + cap_tot - ml_necesarios
-                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml > 0) else "Agotado"
+                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml > 0) else "A pedido"
                                             c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, estado = ? WHERE id = ?", (nuevas_bot, nuevos_ml, nuevo_est, id_p))
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
@@ -1246,10 +1260,10 @@ else:
             else:
                 st.info("Aún no hay registros de clientes en el sistema de seguimiento.")
 
-        # --- SECCIÓN: CONTABILIDAD Y GASTOS ---
+        # --- SECCIÓN: CONTABILIDAD Y GASTOS (CON FILTROS DE FECHA) ---
         elif seccion_admin == "📊 Contabilidad & Gastos":
             st.header("📊 Contabilidad, Gastos y Balance de Caja")
-            st.info("💡 Lleva el control contable completo registrando egresos operativos (envases, bolsas, tarjetas, etiquetas, envíos) y comparándolos con los ingresos de ventas para ver la **Ganancia Neta Real**.")
+            st.info("💡 Lleva el control contable completo con reportes temporales. Selecciona un período para calcular montos totales por día, mes o rango.")
 
             with st.expander("➕ Registrar Nuevo Gasto / Egreso"):
                 with st.form("form_egreso", clear_on_submit=True):
@@ -1274,36 +1288,85 @@ else:
                         st.rerun()
 
             st.markdown("---")
+            st.subheader("📅 Filtro de Fecha para Reportes Contables")
+
             df_hist_c = cargar_historial()
             df_eg_c = cargar_egresos()
 
-            total_ingresos = df_hist_c["monto_ingreso_ars"].sum() if not df_hist_c.empty and "monto_ingreso_ars" in df_hist_c.columns else 0.0
-            total_egresos = df_eg_c["monto_ars"].sum() if not df_eg_c.empty else 0.0
-            ganancia_neta = total_ingresos - total_egresos
+            tipo_filtro_f = st.radio(
+                "Selecciona Período a consultar:",
+                ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"],
+                horizontal=True
+            )
 
-            col_m1, col_m2, col_m3 = st.columns(3)
+            df_h_filt = df_hist_c.copy()
+            df_e_filt = df_eg_c.copy()
+
+            if tipo_filtro_f == "Por Mes / Año":
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    mes_sel = st.selectbox("Mes:", list(range(1, 13)), index=datetime.now().month - 1)
+                with col_m2:
+                    anio_sel = st.number_input("Año:", min_value=2020, max_value=2030, value=datetime.now().year)
+
+                if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.month == mes_sel) & (df_h_filt["fecha_dt"].dt.year == anio_sel)]
+                if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.month == mes_sel) & (df_e_filt["fecha_dt"].dt.year == anio_sel)]
+
+            elif tipo_filtro_f == "Por Día Específico":
+                dia_sel = st.date_input("Selecciona Día:", value=datetime.now().date())
+                dia_str = dia_sel.strftime("%Y-%m-%d")
+
+                if not df_h_filt.empty and "fecha" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[df_h_filt["fecha"].astype(str).str.startswith(dia_str)]
+                if not df_e_filt.empty and "fecha" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[df_e_filt["fecha"].astype(str).str.startswith(dia_str)]
+
+            elif tipo_filtro_f == "Rango de Fechas":
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    f_inicio = st.date_input("Fecha Inicio:", value=datetime.now().date() - timedelta(days=30))
+                with col_r2:
+                    f_fin = st.date_input("Fecha Fin:", value=datetime.now().date())
+
+                if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.date >= f_inicio) & (df_h_filt["fecha_dt"].dt.date <= f_fin)]
+                if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.date >= f_inicio) & (df_e_filt["fecha_dt"].dt.date <= f_fin)]
+
+            # Totales Calculados
+            total_ingresos = df_h_filt["monto_ingreso_ars"].sum() if not df_h_filt.empty and "monto_ingreso_ars" in df_h_filt.columns else 0.0
+            total_egresos = df_e_filt["monto_ars"].sum() if not df_e_filt.empty and "monto_ars" in df_e_filt.columns else 0.0
+            ganancia_neta = total_ingresos - total_egresos
+            cant_ventas = len(df_h_filt) if not df_h_filt.empty else 0
+
+            st.markdown("---")
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
             with col_m1:
-                st.metric("🟢 Ingresos Totales (Ventas y Señas)", fmt_ars(total_ingresos))
+                st.metric("🟢 Ingresos (Ventas y Señas)", fmt_ars(total_ingresos))
             with col_m2:
-                st.metric("🔴 Egresos Totales (Gastos)", fmt_ars(total_egresos))
+                st.metric("🔴 Egresos (Gastos)", fmt_ars(total_egresos))
             with col_m3:
                 st.metric("🏆 GANANCIA NETA", fmt_ars(ganancia_neta))
+            with col_m4:
+                st.metric("🛒 Cantidad Ventas", str(cant_ventas))
 
             st.markdown("---")
             col_tab1, col_tab2 = st.columns(2)
             with col_tab1:
-                st.subheader("🔴 Lista de Egresos / Gastos")
-                if not df_eg_c.empty:
-                    st.dataframe(df_eg_c.drop(columns=['id']), use_container_width=True)
+                st.subheader("🔴 Egresos del Período")
+                if not df_e_filt.empty:
+                    st.dataframe(df_e_filt[["fecha", "categoria", "descripcion", "monto_ars", "socio_registra"]], use_container_width=True)
                 else:
-                    st.caption("No hay egresos registrados.")
+                    st.caption("Sin gastos en este período.")
 
             with col_tab2:
-                st.subheader("🟢 Registro de Ingresos por Ventas")
-                if not df_hist_c.empty:
-                    st.dataframe(df_hist_c[["fecha", "perfume", "socio", "monto_ingreso_ars"]], use_container_width=True)
+                st.subheader("🟢 Ventas del Período")
+                if not df_h_filt.empty:
+                    st.dataframe(df_h_filt[["fecha", "perfume", "tipo_movimiento", "socio", "monto_ingreso_ars"]], use_container_width=True)
                 else:
-                    st.caption("No hay ventas registradas.")
+                    st.caption("Sin ventas en este período.")
 
         # --- SECCIÓN: ORDEN DE COMPRA PROVEEDOR ---
         elif seccion_admin == "📦 Orden de Compra Proveedor":
@@ -1619,7 +1682,7 @@ else:
             df_hist = cargar_historial()
 
             if not df_hist.empty:
-                st.dataframe(df_hist.drop(columns=['id']), use_container_width=True)
+                st.dataframe(df_hist.drop(columns=['id', 'fecha_dt'], errors='ignore'), use_container_width=True)
                 st.markdown("---")
                 
                 opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} (Vendido por {row['socio']})" for _, row in df_hist.iterrows()]

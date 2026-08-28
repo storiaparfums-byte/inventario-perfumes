@@ -72,7 +72,7 @@ def fmt_ars(monto):
         return "$0 ARS"
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS (STORIA PARFUMS: MARRÓN & DORADO)
+# ESTILOS CSS PERSONALIZADOS (STORIA PARFUMS)
 # ---------------------------------------------------------
 st.markdown("""
     <style>
@@ -270,9 +270,25 @@ def init_db():
             perfume TEXT,
             socio TEXT,
             tipo_movimiento TEXT,
-            monto_ingreso_ars REAL DEFAULT 0.0
+            monto_ingreso_ars REAL DEFAULT 0.0,
+            id_producto INTEGER DEFAULT 0,
+            presentacion TEXT DEFAULT '',
+            cantidad INTEGER DEFAULT 1
         )
     ''')
+
+    try:
+        c.execute("ALTER TABLE historial ADD COLUMN id_producto INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE historial ADD COLUMN presentacion TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE historial ADD COLUMN cantidad INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS config (
@@ -767,10 +783,10 @@ else:
 
         st.sidebar.caption(f"💵 Dólar: **{fmt_ars(dolar_hoy)}**")
 
-        # --- SECCIÓN: REGISTRAR SEÑA / RESERVA DE PRODUCTO ---
+        # --- SECCIÓN: REGISTRAR SEÑA / RESERVA (SOPORTA DECANTS) ---
         if seccion_admin == "📌 Registrar Seña / Reserva":
-            st.header("📌 Registrar Seña o Reserva de Producto")
-            st.info("💡 Utiliza esta sección para apartar un perfume. Si eliges **Seña (Con Pago)** registrará el monto en los ingresos. Si eliges **Reserva (Sin Pago)** sólo bloqueará el producto en el catálogo por $0 ARS.")
+            st.header("📌 Registrar Seña o Reserva (Frascos o Decants)")
+            st.info("💡 Aparta un perfume o un decant. Puedes seleccionar si es **Seña (Con Pago)** para ingresar dinero a contabilidad o **Reserva (Sin Pago)** para bloquear la unidad.")
 
             df_sen = cargar_datos_stock()
 
@@ -778,7 +794,11 @@ else:
                 with st.form("form_reg_senia", clear_on_submit=True):
                     col_sen1, col_sen2 = st.columns(2)
                     with col_sen1:
-                        p_senia_sel = st.selectbox("Perfume a Señar / Reservar:", df_sen["nombre"].tolist())
+                        p_senia_sel = st.selectbox("Perfume / Fragancia:", df_sen["nombre"].tolist())
+                        p_data_sen = df_sen[df_sen["nombre"] == p_senia_sel].iloc[0]
+                        cap_sen = p_data_sen.get("capacidad_ml", 100)
+                        
+                        pres_senia_sel = st.selectbox("Presentación a Apartar:", [f"Frasco Completo ({cap_sen}ml)", "Decant 10ml"])
                         cli_senia_nom = st.text_input("Nombre del Cliente:", placeholder="Ej. Juan Pérez")
                         socio_senia_sel = st.selectbox("Socio que toma el pedido:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
                     
@@ -801,27 +821,28 @@ else:
                         conn = sqlite3.connect('inventario.db')
                         c = conn.cursor()
                         
+                        nom_item_senia = f"{p_senia_sel} ({pres_senia_sel})"
+                        
                         c.execute('''
                             UPDATE stock 
                             SET estado = 'Pedido / Señado', socio_asignado = ?, monto_senado_ars = ?, cliente_senado = ?
                             WHERE nombre = ?
-                        ''', (socio_senia_sel, monto_senia_val, cli_senia_nom.strip(), p_senia_sel))
+                        ''', (socio_senia_sel, monto_senia_val, f"{cli_senia_nom.strip()} [{pres_senia_sel}]", p_senia_sel))
                         
-                        # Si hubo pago de seña, registrar en el historial/ingresos contables
                         if monto_senia_val > 0:
                             f_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             c.execute('''
-                                INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars)
-                                VALUES (?, ?, ?, ?, ?)
-                            ''', (f_actual, p_senia_sel, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", monto_senia_val))
+                                INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (f_actual, nom_item_senia, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", monto_senia_val, int(p_data_sen['id']), pres_senia_sel, 1))
 
                         conn.commit()
                         conn.close()
                         
                         if monto_senia_val > 0:
-                            st.success(f"¡El perfume **{p_senia_sel}** quedó marcado como SEÑADO por {cli_senia_nom.strip()} ({fmt_ars(monto_senia_val)})!")
+                            st.success(f"¡El producto **{nom_item_senia}** quedó SEÑADO por {cli_senia_nom.strip()} ({fmt_ars(monto_senia_val)})!")
                         else:
-                            st.success(f"¡El perfume **{p_senia_sel}** quedó RESERVADO sin pago por {cli_senia_nom.strip()}!")
+                            st.success(f"¡El producto **{nom_item_senia}** quedó RESERVADO sin pago por {cli_senia_nom.strip()}!")
                         st.rerun()
 
                 st.markdown("---")
@@ -1176,10 +1197,7 @@ else:
 
                                     if "Frasco" in pres:
                                         nuevas_botellas = max(0, botellas - cant)
-                                        if nuevas_botellas == 0:
-                                            nuevo_est = "A pedido"
-                                        else:
-                                            nuevo_est = "En Stock"
+                                        nuevo_est = "En Stock" if nuevas_botellas > 0 else "A pedido"
                                             
                                         c.execute('''
                                             UPDATE stock 
@@ -1189,10 +1207,7 @@ else:
 
                                     elif "Listo" in pres:
                                         nuevos_decants = max(0, decants - cant)
-                                        if nuevos_decants == 0 and botellas == 0:
-                                            nuevo_est = "A pedido" if cap_tot > 10 else "Agotado"
-                                        else:
-                                            nuevo_est = "En Stock"
+                                        nuevo_est = "En Stock" if (nuevos_decants > 0 or botellas > 0) else "A pedido"
                                             
                                         c.execute('''
                                             UPDATE stock 
@@ -1212,8 +1227,10 @@ else:
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
                                     
-                                    c.execute("INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars) VALUES (?, ?, ?, ?, ?)",
-                                              (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", monto_cobrado_real_item))
+                                    c.execute('''
+                                        INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad) 
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                    ''', (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", monto_cobrado_real_item, id_p, pres, cant))
 
                                     dias_u = item.get("dias_estimados", 90)
                                     fecha_rec = (fecha_actual + timedelta(days=dias_u)).strftime("%Y-%m-%d")
@@ -1233,10 +1250,10 @@ else:
                             st.session_state.items_venta = []
                             st.rerun()
 
-        # --- SECCIÓN: SEGUIMIENTO & CLIENTES (CRM) ---
+        # --- SECCIÓN: SEGUIMIENTO & CLIENTES (CON ELIMINACIÓN) ---
         elif seccion_admin == "💬 Seguimiento & Clientes":
             st.header("💬 Seguimiento de Clientes & Recordatorios WhatsApp")
-            st.info("💡 Este módulo calcula el tiempo estimado de uso del perfume de cada cliente. Cuando la fecha llega a su límite, te permite enviarle un mensaje personalizado de WhatsApp con un solo clic invitándolo a renovar o ver el catálogo.")
+            st.info("💡 Este módulo calcula el tiempo estimado de uso del perfume. Cuando llega la fecha, permite enviar WhatsApp directo o eliminar el registro.")
 
             df_seg = cargar_seguimiento()
 
@@ -1251,7 +1268,7 @@ else:
                 st.subheader(f"🚨 Clientes para Contactar Hoy ({len(df_vencidos)})")
                 if not df_vencidos.empty:
                     for _, row_c in df_vencidos.iterrows():
-                        msg_auto = f"Hola {row_c['cliente_nombre']}! Te escribimos de STORIA PARFUMS. Esperamos que estés disfrutando tu perfume {row_c['perfume']} ✨. Calculamos que ya debe estar por terminarse o listo para renovar. Te dejamos nuestro catálogo actualizado por si querés volver a pedirlo o probar uno nuevo: {URL_CATALOGO_PUBLICO}"
+                        msg_auto = f"Hola {row_c['cliente_nombre']}! Te escribimos de STORIA PARFUMS. Esperamos que estés disfrutando tu perfume {row_c['perfume']} ✨. Calculamos que ya debe estar por terminarse o listo para renovar. Te dejamos nuestro catálogo actualizado: {URL_CATALOGO_PUBLICO}"
                         msg_enc = urllib.parse.quote(msg_auto)
                         cel_clean = re.sub(r'[^\d]', '', str(row_c['cliente_celular']))
                         
@@ -1267,20 +1284,43 @@ else:
                         with col_seg2:
                             if cel_clean:
                                 st.markdown(f'<a href="https://wa.me/{cel_clean}?text={msg_enc}" target="_blank" class="btn-whatsapp">💬 Enviar WhatsApp</a>', unsafe_allow_html=True)
-                            if st.button(f"✅ Marcar Contactado", key=f"btn_mark_{row_c['id']}"):
-                                conn = sqlite3.connect('inventario.db')
-                                c = conn.cursor()
-                                c.execute("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
-                                conn.commit()
-                                conn.close()
-                                st.rerun()
+                            
+                            c1_b, c2_b = st.columns(2)
+                            with c1_b:
+                                if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
+                                    conn = sqlite3.connect('inventario.db')
+                                    c = conn.cursor()
+                                    c.execute("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
+                                    conn.commit()
+                                    conn.close()
+                                    st.rerun()
+                            with c2_b:
+                                if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
+                                    conn = sqlite3.connect('inventario.db')
+                                    c = conn.cursor()
+                                    c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_c['id'],))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success("Registro eliminado.")
+                                    st.rerun()
                 else:
                     st.success("🎉 ¡No hay recordatorios pendientes para contactar hoy!")
 
                 st.markdown("---")
                 st.subheader("📅 Próximos Vencimientos Estimados")
                 if not df_proximos.empty:
-                    st.dataframe(df_proximos[["fecha_compra", "cliente_nombre", "cliente_celular", "perfume", "dias_estimados", "fecha_recordatorio", "socio_vendedor"]], use_container_width=True)
+                    for _, row_p in df_proximos.iterrows():
+                        col_p1, col_p2 = st.columns([3, 1])
+                        with col_p1:
+                            st.markdown(f"**👤 {row_p['cliente_nombre']}** | {row_p['perfume']} ({row_p['presentacion']}) - Recordatorio: `{row_p['fecha_recordatorio']}`")
+                        with col_p2:
+                            if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
+                                conn = sqlite3.connect('inventario.db')
+                                c = conn.cursor()
+                                c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_p['id'],))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
 
                 if not df_contactados.empty:
                     with st.expander("✅ Ver Historial de Clientes Contactados"):
@@ -1288,7 +1328,7 @@ else:
             else:
                 st.info("Aún no hay registros de clientes en el sistema de seguimiento.")
 
-        # --- SECCIÓN: CONTABILIDAD Y GASTOS (CON FILTROS DE FECHA) ---
+        # --- SECCIÓN: CONTABILIDAD Y GASTOS ---
         elif seccion_admin == "📊 Contabilidad & Gastos":
             st.header("📊 Contabilidad, Gastos y Balance de Caja")
             st.info("💡 Lleva el control contable completo con reportes temporales. Selecciona un período para calcular montos totales por día, mes o rango.")
@@ -1363,7 +1403,6 @@ else:
                 if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
                     df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.date >= f_inicio) & (df_e_filt["fecha_dt"].dt.date <= f_fin)]
 
-            # Totales Calculados
             total_ingresos = df_h_filt["monto_ingreso_ars"].sum() if not df_h_filt.empty and "monto_ingreso_ars" in df_h_filt.columns else 0.0
             total_egresos = df_e_filt["monto_ars"].sum() if not df_e_filt.empty and "monto_ars" in df_e_filt.columns else 0.0
             ganancia_neta = total_ingresos - total_egresos
@@ -1548,7 +1587,7 @@ else:
         # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
         elif seccion_admin == "📄 Cargar PDF Proveedor":
             st.header("📄 Procesar PDF Proveedor")
-            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, si un perfume ya existe en la base de datos se conservará todo su stock, imágenes y notas olfativas, **actualizando únicamente el costo USD**. Si el perfume es nuevo, se agregará como 'A pedido' para que puedan cargarlo libremente.")
+            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, si un perfume ya existe se conservará todo su stock, actualizando únicamente el costo USD.")
             
             with st.expander("⚙️ Ajustes de Precios Globales"):
                 nuevo_dolar = st.number_input("Dólar (ARS)", value=float(dolar_hoy))
@@ -1604,7 +1643,7 @@ else:
                 except Exception as e:
                     st.error(f"Error procesando PDF: {e}")
 
-        # --- SECCIÓN: EDITAR / ELIMINAR (SIN CAMPOS DE SEÑA/RESERVA DUPLICADOS) ---
+        # --- SECCIÓN: EDITAR / ELIMINAR ---
         elif seccion_admin == "✏️ Editar / Eliminar":
             st.header("✏️ Editar Estado, Stock & Decants de Perfumes")
             df_mod = cargar_datos_stock()
@@ -1689,26 +1728,47 @@ else:
                 else:
                     st.error("Clave incorrecta.")
 
-        # --- SECCIÓN: HISTORIAL ---
+        # --- SECCIÓN: HISTORIAL CON ANULACIÓN Y REVERSIÓN DE STOCK ---
         elif seccion_admin == "📜 Historial":
-            st.header("📜 Historial de Ventas por Socio")
+            st.header("📜 Historial de Ventas por Socio & Anulación de Movimientos")
             df_hist = cargar_historial()
 
             if not df_hist.empty:
                 st.dataframe(df_hist.drop(columns=['id', 'fecha_dt'], errors='ignore'), use_container_width=True)
                 st.markdown("---")
                 
-                opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} (Vendido por {row['socio']})" for _, row in df_hist.iterrows()]
-                reg_sel = st.selectbox("Eliminar movimiento:", opciones_hist)
+                opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} ({row['tipo_movimiento']})" for _, row in df_hist.iterrows()]
+                reg_sel = st.selectbox("Selecciona movimiento a anular / eliminar:", opciones_hist)
                 id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
 
-                if st.button("❌ Eliminar Movimiento Seleccionado"):
+                if st.button("🔄 Anular Movimiento & Devolver Stock Automáticamente"):
                     conn = sqlite3.connect('inventario.db')
                     c = conn.cursor()
+                    
+                    c.execute("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = ?", (id_h_del,))
+                    res_h = c.fetchone()
+                    
+                    if res_h:
+                        id_p, pres, cant = res_h
+                        cant = cant if cant and cant > 0 else 1
+                        
+                        if id_p and id_p > 0:
+                            c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = ?", (id_p,))
+                            row_p = c.fetchone()
+                            
+                            if row_p:
+                                bot, ml, dec = row_p
+                                if "Frasco" in str(pres):
+                                    c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, estado = 'En Stock' WHERE id = ?", (bot + cant, id_p))
+                                elif "Listo" in str(pres):
+                                    c.execute("UPDATE stock SET decants_10ml_preparados = ?, estado = 'En Stock' WHERE id = ?", (dec + cant, id_p))
+                                elif "abierto" in str(pres):
+                                    c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock' WHERE id = ?", (ml + (cant * 10), id_p))
+
                     c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
                     conn.commit()
                     conn.close()
-                    st.success("Movimiento eliminado.")
+                    st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
                     st.rerun()
 
                 st.markdown("---")
@@ -1730,7 +1790,7 @@ else:
         # --- SECCIÓN: COPIA DE SEGURIDAD (BACKUP) ---
         elif seccion_admin == "💾 Copia de Seguridad":
             st.header("💾 Copia de Seguridad y Respaldo")
-            st.info("Descarga una copia completa de la base de datos (inventario, stock, precios, marcas de señas e historial) para tenerla a resguardo en tu equipo.")
+            st.info("Descarga una copia completa de la base de datos para resguardo.")
             
             try:
                 with open("inventario.db", "rb") as fp:
@@ -1747,7 +1807,6 @@ else:
                 
             st.markdown("---")
             st.subheader("🔄 Restaurar Copia de Seguridad")
-            st.caption("Si necesitas restaurar una versión anterior o migrar datos a un nuevo servidor, sube tu archivo `.db` aquí:")
             
             uploaded_backup = st.file_uploader("Subir archivo de respaldo (.db):", type=["db"])
             

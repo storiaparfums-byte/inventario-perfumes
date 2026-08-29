@@ -915,9 +915,7 @@ else:
                                 if chk_liberar:
                                     conn = sqlite3.connect('inventario.db')
                                     c = conn.cursor()
-                                    # Liberar stock
                                     c.execute("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
-                                    # Eliminar de la orden de compra automáticamente
                                     c.execute("DELETE FROM ordenes_compra WHERE nombre = ? AND estado_inventario LIKE '%Señado%'", (row_sen['nombre'],))
                                     conn.commit()
                                     conn.close()
@@ -1073,14 +1071,28 @@ else:
                             "cantidad": cant_sel, "precio_unitario": p_unit_final, "subtotal": p_unit_final * cant_sel
                         })
                         st.success(f"Agregado {p_sel}")
+                        st.rerun()
                         
                 if st.session_state.items_presupuesto:
                     st.subheader("🛒 Items en el Presupuesto")
-                    df_pres_view = pd.DataFrame(st.session_state.items_presupuesto)
-                    df_pres_view["subtotal_fmt"] = df_pres_view["subtotal"].apply(fmt_ars)
-                    st.dataframe(df_pres_view[["nombre", "presentacion", "cantidad", "subtotal_fmt"]].rename(columns={"subtotal_fmt": "Subtotal"}), use_container_width=True)
                     
-                    subtotal_pres = df_pres_view["subtotal"].sum()
+                    # Desglose interactivo con botón de eliminación individual
+                    for idx_p, item_p in enumerate(st.session_state.items_presupuesto):
+                        col_pi1, col_pi2, col_pi3, col_pi4, col_pi5 = st.columns([3, 2, 1, 2, 1])
+                        with col_pi1:
+                            st.write(f"**{item_p['nombre']}**")
+                        with col_pi2:
+                            st.write(f"{item_p['presentacion']}")
+                        with col_pi3:
+                            st.write(f"x{item_p['cantidad']}")
+                        with col_pi4:
+                            st.write(f"{fmt_ars(item_p['subtotal'])}")
+                        with col_pi5:
+                            if st.button("🗑️", key=f"btn_del_p_item_{idx_p}"):
+                                st.session_state.items_presupuesto.pop(idx_p)
+                                st.rerun()
+
+                    subtotal_pres = sum(i["subtotal"] for i in st.session_state.items_presupuesto)
 
                     st.markdown("---")
                     st.subheader("🎁 Descuento General sobre la Compra")
@@ -1125,7 +1137,7 @@ else:
                         )
                     with col_btn2:
                         chk_limpiar_p = st.checkbox("⚠️ ¿Confirmar limpieza de lista?", key="chk_clear_presupuesto")
-                        if st.button("🗑️ Limpiar Lista"):
+                        if st.button("🗑️ Limpiar Lista Completa"):
                             if chk_limpiar_p:
                                 st.session_state.items_presupuesto = []
                                 st.rerun()
@@ -1200,15 +1212,29 @@ else:
                             "costo_usd": float(p_data_v.get("costo_usd", 0.0))
                         })
                         st.success(f"Agregado {p_sel_v}")
+                        st.rerun()
 
                 if st.session_state.items_venta:
                     st.markdown("---")
                     st.subheader("🛒 Resumen de la Venta a Confirmar")
-                    df_v_view = pd.DataFrame(st.session_state.items_venta)
-                    df_v_view["subtotal_fmt"] = df_v_view["subtotal"].apply(fmt_ars)
-                    st.dataframe(df_v_view[["nombre", "presentacion", "cantidad", "subtotal_fmt"]].rename(columns={"subtotal_fmt": "Subtotal con Desc. Ind."}), use_container_width=True)
+                    
+                    # Desglose interactivo con opción de eliminar ítem individual en Venta
+                    for idx_v, item_v in enumerate(st.session_state.items_venta):
+                        col_vi_1, col_vi_2, col_vi_3, col_vi_4, col_vi_5 = st.columns([3, 2, 1, 2, 1])
+                        with col_vi_1:
+                            st.write(f"**{item_v['nombre']}**")
+                        with col_vi_2:
+                            st.write(f"{item_v['presentacion']}")
+                        with col_vi_3:
+                            st.write(f"x{item_v['cantidad']}")
+                        with col_vi_4:
+                            st.write(f"{fmt_ars(item_v['subtotal'])}")
+                        with col_vi_5:
+                            if st.button("🗑️", key=f"btn_del_v_item_{idx_v}"):
+                                st.session_state.items_venta.pop(idx_v)
+                                st.rerun()
 
-                    subtotal_v = df_v_view["subtotal"].sum()
+                    subtotal_v = sum(i["subtotal"] for i in st.session_state.items_venta)
 
                     st.subheader("🎁 Descuento General sobre Total de Venta")
                     tipo_desc_v = st.radio(
@@ -1312,7 +1338,7 @@ else:
 
                     with col_vbtn2:
                         chk_canc_v = st.checkbox("⚠️ ¿Confirmar cancelación?", key="chk_cancel_venta")
-                        if st.button("🗑️ Cancelar / Limpiar Lista"):
+                        if st.button("🗑️ Cancelar / Limpiar Lista Completa"):
                             if chk_canc_v:
                                 st.session_state.items_venta = []
                                 st.rerun()
@@ -1850,7 +1876,6 @@ else:
                         conn = sqlite3.connect('inventario.db')
                         c = conn.cursor()
                         c.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
-                        # Remover de ordenes de compra asociadas
                         c.execute("DELETE FROM ordenes_compra WHERE nombre = ?", (prod_data['nombre'],))
                         conn.commit()
                         conn.close()

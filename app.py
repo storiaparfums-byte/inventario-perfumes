@@ -328,6 +328,21 @@ def init_db():
         )
     ''')
 
+    # TABLA PERSISTENTE DE ORDENES DE COMPRA PARA COMPARTIR ENTRE SOCIOS
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS ordenes_compra (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT,
+            nombre TEXT,
+            capacidad_ml INTEGER,
+            cantidad INTEGER,
+            costo_usd REAL,
+            estado_inventario TEXT,
+            detalle_reserva TEXT,
+            socio_agrega TEXT
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -363,6 +378,12 @@ def cargar_egresos():
 def cargar_seguimiento():
     conn = sqlite3.connect('inventario.db')
     df = pd.read_sql_query("SELECT * FROM clientes_seguimiento ORDER BY fecha_recordatorio ASC", conn)
+    conn.close()
+    return df
+
+def cargar_ordenes_compra():
+    conn = sqlite3.connect('inventario.db')
+    df = pd.read_sql_query("SELECT * FROM ordenes_compra ORDER BY id ASC", conn)
     conn.close()
     return df
 
@@ -528,7 +549,7 @@ def generar_pdf_presupuesto(cliente, celular, socio_vendedor, items, subtotal, d
     buffer.seek(0)
     return buffer
 
-def generar_pdf_orden_compra(socio_emite, items, total_usd, total_ars):
+def generar_pdf_orden_compra(socio_emite, df_items, total_usd, total_ars, dolar_prov):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35)
     story = []
@@ -540,19 +561,23 @@ def generar_pdf_orden_compra(socio_emite, items, total_usd, total_ars):
     story.append(Spacer(1, 5))
     story.append(Paragraph(f"<b>Solicitado por Socio:</b> {socio_emite}", meta_style))
     story.append(Paragraph(f"<b>Fecha de Solicitud:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
+    story.append(Paragraph(f"<b>Cotización Dólar Proveedor Aplicada:</b> {fmt_ars(dolar_prov)}", meta_style))
     story.append(Spacer(1, 15))
     
-    data = [["Perfume / Producto", "Volumen", "Cant.", "Costo USD", "Subtotal USD"]]
-    for item in items:
+    data = [["Perfume / Producto", "Estado / Reserva", "Cant.", "Costo USD", "Subtotal USD"]]
+    for _, row in df_items.iterrows():
+        est_txt = row['estado_inventario']
+        if row.get('detalle_reserva'):
+            est_txt += f" ({row['detalle_reserva']})"
         data.append([
-            item["nombre"],
-            f"{item['capacidad_ml']} ml",
-            str(item["cantidad"]),
-            f"${item['costo_usd']:.2f}",
-            f"${item['subtotal_usd']:.2f}"
+            row["nombre"],
+            est_txt,
+            str(row["cantidad"]),
+            f"${row['costo_usd']:.2f}",
+            f"${row['subtotal_usd']:.2f}"
         ])
         
-    t = Table(data, colWidths=[220, 80, 50, 90, 100])
+    t = Table(data, colWidths=[200, 110, 40, 90, 100])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
         ('TEXTCOLOR', (0,0), (-1,0), COLOR_GOLD_PDF),
@@ -568,7 +593,7 @@ def generar_pdf_orden_compra(socio_emite, items, total_usd, total_ars):
     
     totales_data = [
         ["Total Estimado USD:", f"${total_usd:.2f} USD"],
-        ["Total Estimado ARS:", fmt_ars(total_ars)]
+        ["Total Estimado ARS (Dólar Prov.):", fmt_ars(total_ars)]
     ]
     t_tot = Table(totales_data, colWidths=[380, 160])
     t_tot.setStyle(TableStyle([
@@ -790,7 +815,7 @@ else:
             ]
         )
 
-        st.sidebar.caption(f"💵 Dólar: **{fmt_ars(dolar_hoy)}**")
+        st.sidebar.caption(f"💵 Dólar Sistema: **{fmt_ars(dolar_hoy)}**")
 
         # --- SECCIÓN: REGISTRAR SEÑA / RESERVA ---
         if seccion_admin == "📌 Registrar Seña / Reserva":
@@ -892,7 +917,7 @@ else:
             
             col_p1, col_p2 = st.columns(2)
             with col_p1:
-                st.metric("Cotización Dólar", fmt_ars(dolar_hoy))
+                st.metric("Cotización Dólar Sistema", fmt_ars(dolar_hoy))
             with col_p2:
                 st.metric("Envase Decant", fmt_ars(costo_envase))
 
@@ -1450,84 +1475,128 @@ else:
                 else:
                     st.caption("Sin ventas en este período.")
 
-        # --- SECCIÓN: ORDEN DE COMPRA PROVEEDOR ---
+        # --- SECCIÓN: ORDEN DE COMPRA PROVEEDOR (COMPARTIDA Y CON DÓLAR PROVEEDOR) ---
         elif seccion_admin == "📦 Orden de Compra Proveedor":
             st.header("📦 Generar Orden de Compra para Proveedor")
-            st.info("💡 Arma listas de pedidos para reponer stock o encargar perfumes nuevos. El sistema calculará el costo total en USD y ARS, sugiriendo el precio de venta final.")
+            st.info("💡 Todos los ítems cargados aquí **quedan guardados en la base de datos** para que los vean todos los socios. Puedes ajustar el dólar específico del proveedor sin modificar la cotización general.")
+
+            # Campo Dólar Proveedor
+            dolar_proveedor = st.number_input(
+                "💵 Cotización Dólar del Proveedor ($ ARS):",
+                min_value=1.0,
+                value=float(dolar_hoy),
+                step=10.0,
+                help="Esta cotización aplica solo para esta Orden de Compra y no cambia la cotización general del sistema."
+            )
 
             df_st_oc = cargar_datos_stock()
 
-            if "items_oc" not in st.session_state:
-                st.session_state.items_oc = []
-
-            tab_oc1, tab_oc2 = st.tabs(["📌 Seleccionar de Stock Existente", "➕ Agregar Producto Nuevo a Pedir"])
+            tab_oc1, tab_oc2 = st.tabs(["📌 Seleccionar de Stock / Inventario", "➕ Agregar Producto Nuevo (Fuera de Inventario)"])
 
             with tab_oc1:
                 if not df_st_oc.empty:
-                    with st.form("form_add_oc_stock"):
+                    with st.form("form_add_oc_stock", clear_on_submit=True):
                         col_oc1, col_oc2 = st.columns([2, 1])
                         with col_oc1:
-                            p_oc_sel = st.selectbox("Seleccionar perfume de la base de datos:", df_st_oc["nombre"].tolist())
+                            p_oc_sel = st.selectbox("Seleccionar perfume del Inventario:", df_st_oc["nombre"].tolist())
                             p_data_oc = df_st_oc[df_st_oc["nombre"] == p_oc_sel].iloc[0]
+                            
+                            est_inv = p_data_oc.get("estado", "En Stock")
+                            det_reserva = ""
+                            if est_inv == "Pedido / Señado":
+                                cli_s = p_data_oc.get("cliente_senado", "")
+                                m_s = float(p_data_oc.get("monto_senado_ars", 0))
+                                det_reserva = f"SEÑADO/RESERVADO: {cli_s} ({fmt_ars(m_s)})"
+                                st.caption(f"📌 **Estado Actual:** {est_inv} - {det_reserva}")
+                            else:
+                                st.caption(f"📌 **Estado Actual:** {est_inv}")
+                                
                         with col_oc2:
                             cant_oc = st.number_input("Cantidad a pedir:", min_value=1, value=1, step=1)
-                            costo_override = st.number_input("Costo USD (Modificar si cambió):", min_value=0.0, value=float(p_data_oc["costo_usd"]), step=1.0)
+                            costo_override = st.number_input("Costo USD (Lista Proveedor):", min_value=0.0, value=float(p_data_oc["costo_usd"]), step=1.0)
                         
-                        btn_oc_add = st.form_submit_button("➕ Agregar a Orden de Compra")
+                        btn_oc_add = st.form_submit_button("➕ Agregar a la Orden de Compra")
                         if btn_oc_add:
-                            st.session_state.items_oc.append({
-                                "nombre": p_oc_sel,
-                                "capacidad_ml": int(p_data_oc.get("capacidad_ml", 100)),
-                                "cantidad": cant_oc,
-                                "costo_usd": costo_override,
-                                "subtotal_usd": costo_override * cant_oc
-                            })
-                            st.success(f"Agregado {p_oc_sel} a la orden.")
+                            conn = sqlite3.connect('inventario.db')
+                            c = conn.cursor()
+                            f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            c.execute('''
+                                INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (f_now, p_oc_sel, int(p_data_oc.get("capacidad_ml", 100)), cant_oc, costo_override, est_inv, det_reserva, st.session_state.socio_autenticado))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
                             st.rerun()
 
             with tab_oc2:
-                with st.form("form_add_oc_nuevo"):
+                with st.form("form_add_oc_nuevo", clear_on_submit=True):
                     col_ocn1, col_ocn2 = st.columns(2)
                     with col_ocn1:
                         nom_nuevo_oc = st.text_input("Nombre del nuevo perfume:")
                         cap_nuevo_oc = st.number_input("Capacidad ML:", min_value=10, value=100, step=5)
                     with col_ocn2:
-                        cant_nuevo_oc = st.number_input("Cantidad:", min_value=1, value=1, step=1)
-                        costo_nuevo_oc = st.number_input("Costo USD por unidad:", min_value=0.0, value=0.0, step=1.0)
+                        cant_nuevo_oc = st.number_input("Cantidad a pedir:", min_value=1, value=1, step=1)
+                        costo_nuevo_oc = st.number_input("Costo USD unidad:", min_value=0.0, value=0.0, step=1.0)
                     
                     btn_oc_nuevo_add = st.form_submit_button("➕ Agregar Producto Nuevo")
                     if btn_oc_nuevo_add and nom_nuevo_oc.strip() != "":
-                        st.session_state.items_oc.append({
-                            "nombre": nom_nuevo_oc.strip(),
-                            "capacidad_ml": cap_nuevo_oc,
-                            "cantidad": cant_nuevo_oc,
-                            "costo_usd": costo_nuevo_oc,
-                            "subtotal_usd": costo_nuevo_oc * cant_nuevo_oc
-                        })
-                        st.success(f"Agregado {nom_nuevo_oc} a la orden.")
+                        conn = sqlite3.connect('inventario.db')
+                        c = conn.cursor()
+                        f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        c.execute('''
+                            INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
+                            VALUES (?, ?, ?, ?, ?, 'Nuevo', '', ?)
+                        ''', (f_now, nom_nuevo_oc.strip(), cap_nuevo_oc, cant_nuevo_oc, costo_nuevo_oc, st.session_state.socio_autenticado))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
                         st.rerun()
 
-            if st.session_state.items_oc:
+            # Cargar Orden de Compra Persistente desde SQLite
+            df_oc_saved = cargar_ordenes_compra()
+
+            if not df_oc_saved.empty:
                 st.markdown("---")
-                st.subheader("📝 Resumen de la Orden de Compra")
-                df_oc_view = pd.DataFrame(st.session_state.items_oc)
-                
-                df_oc_view["costo_ars"] = df_oc_view["costo_usd"] * dolar_hoy
-                df_oc_view["precio_venta_sugerido"] = df_oc_view["costo_ars"].apply(lambda c: redondear_monto(c * (1 + (margen_100_gen / 100)), 100))
-                df_oc_view["precio_sugerido_fmt"] = df_oc_view["precio_venta_sugerido"].apply(fmt_ars)
-                
-                st.dataframe(df_oc_view[["nombre", "capacidad_ml", "cantidad", "costo_usd", "subtotal_usd", "precio_sugerido_fmt"]].rename(columns={"precio_sugerido_fmt": "PVP Sugerido ARS"}), use_container_width=True)
+                st.subheader("📝 Lista Compartida de Orden de Compra")
 
-                tot_usd = df_oc_view["subtotal_usd"].sum()
-                tot_ars = tot_usd * dolar_hoy
+                df_oc_saved["subtotal_usd"] = df_oc_saved["costo_usd"] * df_oc_saved["cantidad"]
+                df_oc_saved["costo_ars_prov"] = df_oc_saved["subtotal_usd"] * dolar_proveedor
+                df_oc_saved["precio_sugerido_ars"] = df_oc_saved["costo_usd"].apply(
+                    lambda c: redondear_monto((c * dolar_proveedor) * (1 + (margen_100_gen / 100)), 100)
+                )
 
+                for idx, row_oc in df_oc_saved.iterrows():
+                    col_oc_i1, col_oc_i2 = st.columns([4, 1])
+                    with col_oc_i1:
+                        est_badge = f"<b>[{row_oc['estado_inventario']}]</b>"
+                        det_res = f" - <span style='color:#FF6B6B;'>{row_oc['detalle_reserva']}</span>" if row_oc['detalle_reserva'] else ""
+                        st.markdown(f"""
+                        <div style="background-color: #291D1A; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #D4AF37;">
+                            <b>{row_oc['nombre']}</b> ({row_oc['capacidad_ml']}ml) x {row_oc['cantidad']} un | {est_badge}{det_res}<br>
+                            <small>Costo USD: <b>${row_oc['costo_usd']:.2f}</b> | Subtotal USD: <b>${row_oc['subtotal_usd']:.2f}</b> | Costo ARS Prov: <b>{fmt_ars(row_oc['costo_ars_prov'])}</b> | PVP Sugerido: <b>{fmt_ars(row_oc['precio_sugerido_ars'])}</b> | Creado por: {row_oc['socio_agrega']}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_oc_i2:
+                        if st.button("🗑️ Eliminar", key=f"btn_del_oc_{row_oc['id']}"):
+                            conn = sqlite3.connect('inventario.db')
+                            c = conn.cursor()
+                            c.execute("DELETE FROM ordenes_compra WHERE id = ?", (row_oc['id'],))
+                            conn.commit()
+                            conn.close()
+                            st.rerun()
+
+                tot_usd_oc = df_oc_saved["subtotal_usd"].sum()
+                tot_ars_oc = tot_usd_oc * dolar_proveedor
+
+                st.markdown("---")
                 col_octot1, col_octot2 = st.columns(2)
                 with col_octot1:
-                    st.metric("Total Estimado USD", f"${tot_usd:.2f} USD")
+                    st.metric("Total Estimado USD", f"${tot_usd_oc:.2f} USD")
                 with col_octot2:
-                    st.metric("Total Estimado ARS", fmt_ars(tot_ars))
+                    st.metric("Total Estimado ARS (Dólar Prov.)", fmt_ars(tot_ars_oc))
 
-                pdf_oc_bytes = generar_pdf_orden_compra(st.session_state.socio_autenticado, st.session_state.items_oc, tot_usd, tot_ars)
+                pdf_oc_bytes = generar_pdf_orden_compra(st.session_state.socio_autenticado, df_oc_saved, tot_usd_oc, tot_ars_oc, dolar_proveedor)
 
                 col_ocbtn1, col_ocbtn2 = st.columns(2)
                 with col_ocbtn1:
@@ -1538,9 +1607,16 @@ else:
                         mime="application/pdf"
                     )
                 with col_ocbtn2:
-                    if st.button("🗑️ Limpiar Orden de Compra"):
-                        st.session_state.items_oc = []
+                    if st.button("🚨 Vaciar Orden de Compra Completa"):
+                        conn = sqlite3.connect('inventario.db')
+                        c = conn.cursor()
+                        c.execute("DELETE FROM ordenes_compra")
+                        conn.commit()
+                        conn.close()
+                        st.success("Orden de compra vaciada.")
                         st.rerun()
+            else:
+                st.info("No hay ítems agregados en la orden de compra actual.")
 
         # --- SECCIÓN: AGREGAR PERFUME ---
         elif seccion_admin == "➕ Agregar Perfume":
@@ -1607,7 +1683,7 @@ else:
             st.info("💡 **Sincronización Inteligente:** Al subir el PDF, si un perfume ya existe se conservará todo su stock y género, actualizando únicamente el costo USD.")
             
             with st.expander("⚙️ Ajustes de Precios Globales"):
-                nuevo_dolar = st.number_input("Dólar (ARS)", value=float(dolar_hoy))
+                nuevo_dolar = st.number_input("Dólar Sistema (ARS)", value=float(dolar_hoy))
                 nuevo_m100 = st.number_input("Margen Frasco %", value=float(margen_100_gen))
                 nuevo_mdec = st.number_input("Margen Decant %", value=float(margen_dec_gen))
                 nuevo_envase = st.number_input("Envase Decant (ARS)", value=float(costo_envase))

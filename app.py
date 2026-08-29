@@ -71,6 +71,16 @@ def fmt_ars(monto):
     except (ValueError, TypeError):
         return "$0 ARS"
 
+def limpiar_int_ml(val, defecto=100):
+    """Sanitiza campos enteros evitando artefactos binarios de SQLite"""
+    try:
+        if isinstance(val, bytes):
+            val = val.decode('utf-8', errors='ignore')
+        val_clean = re.sub(r'[^\d]', '', str(val))
+        return int(val_clean) if val_clean else defecto
+    except Exception:
+        return defecto
+
 # ---------------------------------------------------------
 # ESTILOS CSS PERSONALIZADOS (STORIA PARFUMS)
 # ---------------------------------------------------------
@@ -337,7 +347,7 @@ def cargar_datos_stock():
     conn.close()
     if not df.empty:
         if "capacidad_ml" in df.columns:
-            df["capacidad_ml"] = pd.to_numeric(df["capacidad_ml"], errors='coerce').fillna(100).astype(int)
+            df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
         if "genero" in df.columns:
             df["genero"] = df["genero"].fillna("Unisex").replace("", "Unisex")
     return df
@@ -368,6 +378,8 @@ def cargar_ordenes_compra():
     conn = sqlite3.connect('inventario.db')
     df = pd.read_sql_query("SELECT * FROM ordenes_compra ORDER BY id ASC", conn)
     conn.close()
+    if not df.empty and "capacidad_ml" in df.columns:
+        df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
     return df
 
 def cargar_config():
@@ -441,7 +453,7 @@ def generar_pdf_catalogo(df_cat):
     
     data = [["Perfume / Marca", "Género", "Presentación", "Estado", "Frasco Cerrado", "Decant 10 ml"]]
     for _, row in df_cat.iterrows():
-        cap = row.get("capacidad_ml", 100)
+        cap = limpiar_int_ml(row.get("capacidad_ml", 100), 100)
         gen = row.get("genero", "Unisex")
         tipo_str = f" ({row['tipo']})" if row.get("tipo") else ""
         data.append([
@@ -626,7 +638,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base = df_cat_base.sort_values(by=["orden", "nombre"]).drop(columns=["orden"])
 
         df_cat_base["costo_usd"] = pd.to_numeric(df_cat_base["costo_usd"], errors='coerce').fillna(0.0)
-        df_cat_base["capacidad_ml"] = pd.to_numeric(df_cat_base["capacidad_ml"], errors='coerce').fillna(100).astype(int)
+        df_cat_base["capacidad_ml"] = df_cat_base["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
         df_cat_base["decants_10ml_preparados"] = pd.to_numeric(df_cat_base["decants_10ml_preparados"], errors='coerce').fillna(0).astype(int)
         df_cat_base["botellas_100ml_cerradas"] = pd.to_numeric(df_cat_base["botellas_100ml_cerradas"], errors='coerce').fillna(0).astype(int)
         df_cat_base["ml_disponibles_abiertos"] = pd.to_numeric(df_cat_base["ml_disponibles_abiertos"], errors='coerce').fillna(0).astype(int)
@@ -707,7 +719,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
             p_100ml_str = fmt_ars(r['precio_100ml'])
             p_decant_str = fmt_ars(r['precio_decant'])
-            cap_ml = r.get("capacidad_ml", 100)
+            cap_ml = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
             cnt_decants = r.get("decants_10ml_preparados", 0)
             cnt_frascos = r.get("botellas_100ml_cerradas", 0)
             cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
@@ -805,13 +817,13 @@ else:
             df_sen = cargar_datos_stock()
 
             if not df_sen.empty:
+                p_senia_sel = st.selectbox("Perfume / Fragancia:", df_sen["nombre"].tolist())
+                p_data_sen = df_sen[df_sen["nombre"] == p_senia_sel].iloc[0]
+                cap_sen = limpiar_int_ml(p_data_sen.get("capacidad_ml", 100), 100)
+
                 with st.form("form_reg_senia", clear_on_submit=True):
                     col_sen1, col_sen2 = st.columns(2)
                     with col_sen1:
-                        p_senia_sel = st.selectbox("Perfume / Fragancia:", df_sen["nombre"].tolist())
-                        p_data_sen = df_sen[df_sen["nombre"] == p_senia_sel].iloc[0]
-                        cap_sen = p_data_sen.get("capacidad_ml", 100)
-                        
                         pres_senia_sel = st.selectbox("Presentación a Apartar:", [f"Frasco Completo ({cap_sen}ml)", "Decant 10ml"])
                         cli_senia_nom = st.text_input("Nombre del Cliente:", placeholder="Ej. Juan Pérez")
                         socio_senia_sel = st.selectbox("Socio que toma el pedido:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
@@ -898,14 +910,18 @@ else:
                             </div>
                             """, unsafe_allow_html=True)
                         with col_s_card2:
+                            chk_liberar = st.checkbox("⚠️ ¿Confirmar liberación?", key=f"chk_unmark_{row_sen['id']}")
                             if st.button(f"🔓 Liberar Producto", key=f"btn_unmark_{row_sen['id']}"):
-                                conn = sqlite3.connect('inventario.db')
-                                c = conn.cursor()
-                                c.execute("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
-                                conn.commit()
-                                conn.close()
-                                st.success("Reserva/Seña liberada. El producto volvió a 'En Stock'.")
-                                st.rerun()
+                                if chk_liberar:
+                                    conn = sqlite3.connect('inventario.db')
+                                    c = conn.cursor()
+                                    c.execute("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success("Reserva/Seña liberada. El producto volvió a 'En Stock'.")
+                                    st.rerun()
+                                else:
+                                    st.warning("Marca la casilla para confirmar.")
                 else:
                     st.caption("No hay productos señados ni reservados en este momento.")
 
@@ -923,7 +939,7 @@ else:
 
             if not df.empty:
                 df["costo_usd"] = pd.to_numeric(df["costo_usd"], errors='coerce').fillna(0.0)
-                df["capacidad_ml"] = pd.to_numeric(df["capacidad_ml"], errors='coerce').fillna(100).astype(int)
+                df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
                 df["genero"] = df["genero"].fillna("Unisex").replace("", "Unisex")
                 df["estado"] = df["estado"].replace("Disponible en Proveedor", "A pedido").fillna("A pedido")
                 df["margen_100ml_custom"] = pd.to_numeric(df["margen_100ml_custom"], errors='coerce')
@@ -968,7 +984,7 @@ else:
                         gen_str = f" • <span style='color:#E2E8F0;'>[{r['genero']}]</span>"
                         p_100_card = fmt_ars(r['precio_venta_100ml_ars'])
                         p_dec_card = fmt_ars(r['precio_venta_decant_10ml_ars'])
-                        cap = r.get("capacidad_ml", 100)
+                        cap = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
                         
                         socio_reserva_html = ""
                         if r['estado'] == "Pedido / Señado":
@@ -1016,7 +1032,7 @@ else:
             
             if not df_p.empty:
                 df_p["costo_usd"] = pd.to_numeric(df_p["costo_usd"], errors='coerce').fillna(0.0)
-                df_p["capacidad_ml"] = pd.to_numeric(df_p["capacidad_ml"], errors='coerce').fillna(100).astype(int)
+                df_p["capacidad_ml"] = df_p["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
                 df_p["margen_100ml_custom"] = pd.to_numeric(df_p["margen_100ml_custom"], errors='coerce')
                 df_p["margen"] = df_p["margen_100ml_custom"].fillna(margen_100_gen)
                 
@@ -1032,12 +1048,13 @@ else:
                 if "items_presupuesto" not in st.session_state:
                     st.session_state.items_presupuesto = []
                     
+                p_sel = st.selectbox("Perfume:", df_p["nombre"].tolist())
+                p_data_temp = df_p[df_p["nombre"] == p_sel].iloc[0]
+                cap_temp = limpiar_int_ml(p_data_temp.get("capacidad_ml", 100), 100)
+
                 with st.form("form_item_presupuesto"):
                     col_pitem1, col_pitem2 = st.columns([2, 1])
                     with col_pitem1:
-                        p_sel = st.selectbox("Perfume:", df_p["nombre"].tolist())
-                        p_data_temp = df_p[df_p["nombre"] == p_sel].iloc[0]
-                        cap_temp = p_data_temp.get("capacidad_ml", 100)
                         pres_sel = st.selectbox("Presentación:", [f"Frasco Cerrado ({cap_temp}ml)", "Decant 10ml"])
                     with col_pitem2:
                         cant_sel = st.number_input("Cantidad:", min_value=1, value=1, step=1)
@@ -1104,9 +1121,13 @@ else:
                             mime="application/pdf"
                         )
                     with col_btn2:
+                        chk_limpiar_p = st.checkbox("⚠️ ¿Confirmar limpiar lista?")
                         if st.button("🗑️ Limpiar Lista"):
-                            st.session_state.items_presupuesto = []
-                            st.rerun()
+                            if chk_limpiar_p:
+                                st.session_state.items_presupuesto = []
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para limpiar la lista.")
 
         # --- SECCIÓN: REGISTRAR VENTA ---
         elif seccion_admin == "🛒 Registrar Venta":
@@ -1128,7 +1149,7 @@ else:
 
             if not df_actual.empty:
                 df_actual["costo_usd"] = pd.to_numeric(df_actual["costo_usd"], errors='coerce').fillna(0.0)
-                df_actual["capacidad_ml"] = pd.to_numeric(df_actual["capacidad_ml"], errors='coerce').fillna(100).astype(int)
+                df_actual["capacidad_ml"] = df_actual["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
                 df_actual["margen_100ml_custom"] = pd.to_numeric(df_actual["margen_100ml_custom"], errors='coerce')
                 df_actual["margen"] = df_actual["margen_100ml_custom"].fillna(margen_100_gen)
                 
@@ -1144,13 +1165,14 @@ else:
                 if "items_venta" not in st.session_state:
                     st.session_state.items_venta = []
 
+                p_sel_v = st.selectbox("Perfume a vender:", df_actual["nombre"].tolist())
+                p_data_v = df_actual[df_actual["nombre"] == p_sel_v].iloc[0]
+                cap_v = limpiar_int_ml(p_data_v.get("capacidad_ml", 100), 100)
+
                 with st.form("form_item_venta"):
                     st.subheader("➕ Agregar Perfume / Decant a la Venta")
                     col_vi1, col_vi2 = st.columns([2, 1])
                     with col_vi1:
-                        p_sel_v = st.selectbox("Perfume a vender:", df_actual["nombre"].tolist())
-                        p_data_v = df_actual[df_actual["nombre"] == p_sel_v].iloc[0]
-                        cap_v = p_data_v.get("capacidad_ml", 100)
                         pres_sel_v = st.selectbox("Presentación:", [f"Frasco Cerrado ({cap_v}ml)", "Decant 10ml (Listo)", "Descontar 10ml de frasco abierto"])
                     with col_vi2:
                         cant_sel_v = st.number_input("Cantidad unidades:", min_value=1, value=1, step=1)
@@ -1229,6 +1251,7 @@ else:
                                 
                                 if row_stock:
                                     botellas, ml, decants, cap_tot = row_stock
+                                    cap_tot = limpiar_int_ml(cap_tot, 100)
                                     cant = item["cantidad"]
                                     pres = item["presentacion"]
 
@@ -1285,9 +1308,13 @@ else:
                             st.rerun()
 
                     with col_vbtn2:
+                        chk_canc_v = st.checkbox("⚠️ ¿Confirmar cancelación?")
                         if st.button("🗑️ Cancelar / Limpiar Lista"):
-                            st.session_state.items_venta = []
-                            st.rerun()
+                            if chk_canc_v:
+                                st.session_state.items_venta = []
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
 
         # --- SECCIÓN: SEGUIMIENTO & CLIENTES ---
         elif seccion_admin == "💬 Seguimiento & Clientes":
@@ -1324,17 +1351,17 @@ else:
                             if cel_clean:
                                 st.markdown(f'<a href="https://wa.me/{cel_clean}?text={msg_enc}" target="_blank" class="btn-whatsapp">💬 Enviar WhatsApp</a>', unsafe_allow_html=True)
                             
-                            c1_b, c2_b = st.columns(2)
-                            with c1_b:
-                                if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
-                                    conn = sqlite3.connect('inventario.db')
-                                    c = conn.cursor()
-                                    c.execute("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
-                                    conn.commit()
-                                    conn.close()
-                                    st.rerun()
-                            with c2_b:
-                                if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
+                            if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
+                                conn = sqlite3.connect('inventario.db')
+                                c = conn.cursor()
+                                c.execute("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
+
+                            confirm_del_seg = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_seg_{row_c['id']}")
+                            if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
+                                if confirm_del_seg:
                                     conn = sqlite3.connect('inventario.db')
                                     c = conn.cursor()
                                     c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_c['id'],))
@@ -1342,6 +1369,8 @@ else:
                                     conn.close()
                                     st.success("Registro eliminado.")
                                     st.rerun()
+                                else:
+                                    st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para borrar.")
                 else:
                     st.success("🎉 ¡No hay recordatorios pendientes para contactar hoy!")
 
@@ -1353,13 +1382,17 @@ else:
                         with col_p1:
                             st.markdown(f"**👤 {row_p['cliente_nombre']}** | {row_p['perfume']} ({row_p['presentacion']}) - Recordatorio: `{row_p['fecha_recordatorio']}`")
                         with col_p2:
+                            confirm_del_prox = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prox_{row_p['id']}")
                             if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
-                                conn = sqlite3.connect('inventario.db')
-                                c = conn.cursor()
-                                c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_p['id'],))
-                                conn.commit()
-                                conn.close()
-                                st.rerun()
+                                if confirm_del_prox:
+                                    conn = sqlite3.connect('inventario.db')
+                                    c = conn.cursor()
+                                    c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_p['id'],))
+                                    conn.commit()
+                                    conn.close()
+                                    st.rerun()
+                                else:
+                                    st.warning("Marca la casilla para confirmar.")
 
                 if not df_contactados.empty:
                     with st.expander("✅ Ver Historial de Clientes Contactados"):
@@ -1493,12 +1526,13 @@ else:
 
             with tab_oc1:
                 if not df_st_oc.empty:
+                    p_oc_sel = st.selectbox("Seleccionar perfume del Inventario:", df_st_oc["nombre"].tolist())
+                    p_data_oc = df_st_oc[df_st_oc["nombre"] == p_oc_sel].iloc[0]
+                    cap_oc = limpiar_int_ml(p_data_oc.get("capacidad_ml", 100), 100)
+
                     with st.form("form_add_oc_stock", clear_on_submit=True):
                         col_oc1, col_oc2 = st.columns([2, 1])
                         with col_oc1:
-                            p_oc_sel = st.selectbox("Seleccionar perfume del Inventario:", df_st_oc["nombre"].tolist())
-                            p_data_oc = df_st_oc[df_st_oc["nombre"] == p_oc_sel].iloc[0]
-                            
                             est_inv = p_data_oc.get("estado", "En Stock")
                             det_reserva = ""
                             if est_inv == "Pedido / Señado":
@@ -1521,7 +1555,7 @@ else:
                             c.execute('''
                                 INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (f_now, p_oc_sel, int(p_data_oc.get("capacidad_ml", 100)), cant_oc, costo_override, est_inv, det_reserva, st.session_state.socio_autenticado))
+                            ''', (f_now, p_oc_sel, cap_oc, cant_oc, costo_override, est_inv, det_reserva, st.session_state.socio_autenticado))
                             conn.commit()
                             conn.close()
                             st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
@@ -1545,7 +1579,7 @@ else:
                         c.execute('''
                             INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                             VALUES (?, ?, ?, ?, ?, 'Nuevo', '', ?)
-                        ''', (f_now, nom_nuevo_oc.strip(), cap_nuevo_oc, cant_nuevo_oc, costo_nuevo_oc, st.session_state.socio_autenticado))
+                        ''', (f_now, nom_nuevo_oc.strip(), int(cap_nuevo_oc), cant_nuevo_oc, costo_nuevo_oc, st.session_state.socio_autenticado))
                         conn.commit()
                         conn.close()
                         st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
@@ -1564,24 +1598,29 @@ else:
                 )
 
                 for idx, row_oc in df_oc_saved.iterrows():
-                    col_oc_i1, col_oc_i2 = st.columns([4, 1])
+                    col_oc_i1, col_oc_i2 = st.columns([3, 1])
+                    cap_ml_clean = limpiar_int_ml(row_oc['capacidad_ml'], 100)
                     with col_oc_i1:
                         est_badge = f"<b>[{row_oc['estado_inventario']}]</b>"
                         det_res = f" - <span style='color:#FF6B6B;'>{row_oc['detalle_reserva']}</span>" if row_oc['detalle_reserva'] else ""
                         st.markdown(f"""
                         <div style="background-color: #291D1A; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #D4AF37;">
-                            <b>{row_oc['nombre']}</b> ({row_oc['capacidad_ml']}ml) x {row_oc['cantidad']} un | {est_badge}{det_res}<br>
+                            <b>{row_oc['nombre']}</b> ({cap_ml_clean}ml) x {row_oc['cantidad']} un | {est_badge}{det_res}<br>
                             <small>Costo USD: <b>${row_oc['costo_usd']:.2f}</b> | Subtotal USD: <b>${row_oc['subtotal_usd']:.2f}</b> | Costo ARS Prov: <b>{fmt_ars(row_oc['costo_ars_prov'])}</b> | PVP Sugerido: <b>{fmt_ars(row_oc['precio_sugerido_ars'])}</b> | Creado por: {row_oc['socio_agrega']}</small>
                         </div>
                         """, unsafe_allow_html=True)
                     with col_oc_i2:
+                        confirm_del_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_oc_{row_oc['id']}")
                         if st.button("🗑️ Eliminar", key=f"btn_del_oc_{row_oc['id']}"):
-                            conn = sqlite3.connect('inventario.db')
-                            c = conn.cursor()
-                            c.execute("DELETE FROM ordenes_compra WHERE id = ?", (row_oc['id'],))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
+                            if confirm_del_oc:
+                                conn = sqlite3.connect('inventario.db')
+                                c = conn.cursor()
+                                c.execute("DELETE FROM ordenes_compra WHERE id = ?", (row_oc['id'],))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
 
                 tot_usd_oc = df_oc_saved["subtotal_usd"].sum()
                 tot_ars_oc = tot_usd_oc * dolar_proveedor
@@ -1604,14 +1643,18 @@ else:
                         mime="application/pdf"
                     )
                 with col_ocbtn2:
+                    confirm_vaciar_oc = st.checkbox("⚠️ ¿Confirmar eliminación?")
                     if st.button("🚨 Vaciar Orden de Compra Completa"):
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
-                        c.execute("DELETE FROM ordenes_compra")
-                        conn.commit()
-                        conn.close()
-                        st.success("Orden de compra vaciada.")
-                        st.rerun()
+                        if confirm_vaciar_oc:
+                            conn = sqlite3.connect('inventario.db')
+                            c = conn.cursor()
+                            c.execute("DELETE FROM ordenes_compra")
+                            conn.commit()
+                            conn.close()
+                            st.success("Orden de compra vaciada.")
+                            st.rerun()
+                        else:
+                            st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para vaciar toda la orden.")
             else:
                 st.info("No hay ítems agregados en la orden de compra actual.")
 
@@ -1636,7 +1679,7 @@ else:
                 with col_st1:
                     botellas = st.number_input("Frascos Cerrados en Stock", min_value=0, value=1 if estado == "En Stock" else 0)
                 with col_st2:
-                    ml_abiertos = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=capacidad_ml, value=0)
+                    ml_abiertos = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(capacidad_ml), value=0)
                 with col_st3:
                     decants = st.number_input("Cantidad Decants 10ml Listos", min_value=0, value=0)
                 
@@ -1661,13 +1704,13 @@ else:
                                     decants_10ml_preparados = ?, costo_usd = ?, estado = ?,
                                     notas_olfativas = ?, imagen_url = ?
                                 WHERE id = ?
-                            ''', (tipo, genero_sel, capacidad_ml, botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url, encontrado_id))
+                            ''', (tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url, encontrado_id))
                             st.warning("Producto actualizado sin duplicar.")
                         else:
                             c.execute('''
                                 INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (nombre.strip(), tipo, genero_sel, capacidad_ml, botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url))
+                            ''', (nombre.strip(), tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url))
                             st.success("¡Perfume guardado!")
                             
                         conn.commit()
@@ -1699,7 +1742,7 @@ else:
                     for l in texto_completo.split("\n"):
                         p_nom, p_cost, p_cap = extraer_perfume_y_precio(l)
                         if p_nom and p_cost and len(p_nom) > 2 and p_cost > 3:
-                            items.append({"nombre": p_nom, "costo_usd": p_cost, "capacidad_ml": p_cap})
+                            items.append({"nombre": p_nom, "costo_usd": p_cost, "capacidad_ml": int(p_cap)})
 
                     if items:
                         df_pdf = pd.DataFrame(items)
@@ -1718,13 +1761,13 @@ else:
                             for _, r in df_pdf.iterrows():
                                 nom_norm = normalizar_texto(r['nombre'])
                                 if nom_norm in dict_existentes:
-                                    c.execute("UPDATE stock SET costo_usd = ?, capacidad_ml = ? WHERE id = ?", (r['costo_usd'], r['capacidad_ml'], dict_existentes[nom_norm]))
+                                    c.execute("UPDATE stock SET costo_usd = ?, capacidad_ml = ? WHERE id = ?", (r['costo_usd'], int(r['capacidad_ml']), dict_existentes[nom_norm]))
                                     actualizados += 1
                                 else:
                                     c.execute('''
                                         INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
                                         VALUES (?, '', 'Unisex', ?, 0, 0, 0, ?, 'A pedido', '')
-                                    ''', (r['nombre'], r['capacidad_ml'], r['costo_usd']))
+                                    ''', (r['nombre'], int(r['capacidad_ml']), r['costo_usd']))
                                     cargados += 1
                             conn.commit()
                             conn.close()
@@ -1746,7 +1789,7 @@ else:
 
                 val_tipo = prod_data['tipo'] if pd.notnull(prod_data.get('tipo')) and prod_data['tipo'] in CATEGORIAS else ""
                 val_gen = prod_data['genero'] if pd.notnull(prod_data.get('genero')) and prod_data['genero'] in GENEROS else "Unisex"
-                val_cap = int(prod_data.get('capacidad_ml', 100))
+                val_cap = limpiar_int_ml(prod_data.get('capacidad_ml', 100), 100)
                 val_decants = int(prod_data.get('decants_10ml_preparados', 0))
 
                 with st.form("form_edicion"):
@@ -1772,7 +1815,7 @@ else:
                     with col_ed_b1:
                         nbot = st.number_input("Frascos Cerrados en Stock", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
                     with col_ed_b2:
-                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=nueva_capacidad, value=int(prod_data['ml_disponibles_abiertos']))
+                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(nueva_capacidad), value=int(prod_data['ml_disponibles_abiertos']))
                     with col_ed_b3:
                         ndec = st.number_input("🧪 Decants 10ml Listos", min_value=0, value=val_decants)
                     
@@ -1791,26 +1834,31 @@ else:
                                 botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, 
                                 notas_olfativas = ?, imagen_url = ?
                             WHERE id = ?
-                        ''', (nuevo_nombre, nuevo_tipo, nuevo_genero, nueva_capacidad, nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevas_notas, nueva_img, id_mod))
+                        ''', (nuevo_nombre, nuevo_tipo, nuevo_genero, int(nueva_capacidad), nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevas_notas, nueva_img, id_mod))
                         conn.commit()
                         conn.close()
                         st.success("¡Stock y datos del perfume actualizados correctamente!")
                         st.rerun()
 
                 st.markdown("---")
+                confirm_del_prod = st.checkbox(f"⚠️ ¿Confirmar eliminación?")
                 if st.button(f"🗑️ Eliminar '{prod_data['nombre']}'"):
-                    conn = sqlite3.connect('inventario.db')
-                    c = conn.cursor()
-                    c.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
-                    conn.commit()
-                    conn.close()
-                    st.success("Eliminado.")
-                    st.rerun()
+                    if confirm_del_prod:
+                        conn = sqlite3.connect('inventario.db')
+                        c = conn.cursor()
+                        c.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
+                        conn.commit()
+                        conn.close()
+                        st.success("Perfume eliminado del sistema.")
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para borrar este producto.")
 
             st.markdown("---")
             clave_inv_input = st.text_input("🔑 Clave Master (Vaciar catálogo):", type="password")
+            confirm_vaciar_cat = st.checkbox("⚠️ ¿Confirmar eliminación?")
             if st.button("🚨 VACIAR CATALOGO COMPLETO"):
-                if clave_inv_input == CLAVE_ADMIN_MASTER:
+                if clave_inv_input == CLAVE_ADMIN_MASTER and confirm_vaciar_cat:
                     conn = sqlite3.connect('inventario.db')
                     c = conn.cursor()
                     c.execute("DELETE FROM stock")
@@ -1819,7 +1867,7 @@ else:
                     st.success("Catálogo vaciado.")
                     st.rerun()
                 else:
-                    st.error("Clave incorrecta.")
+                    st.error("Clave incorrecta o casilla de confirmación no marcada.")
 
         # --- SECCIÓN: HISTORIAL ---
         elif seccion_admin == "📜 Historial":
@@ -1834,40 +1882,45 @@ else:
                 reg_sel = st.selectbox("Selecciona movimiento a anular / eliminar:", opciones_hist)
                 id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
 
+                confirm_anular = st.checkbox("⚠️ ¿Confirmar eliminación?")
                 if st.button("🔄 Anular Movimiento & Devolver Stock Automáticamente"):
-                    conn = sqlite3.connect('inventario.db')
-                    c = conn.cursor()
-                    
-                    c.execute("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = ?", (id_h_del,))
-                    res_h = c.fetchone()
-                    
-                    if res_h:
-                        id_p, pres, cant = res_h
-                        cant = cant if cant and cant > 0 else 1
+                    if confirm_anular:
+                        conn = sqlite3.connect('inventario.db')
+                        c = conn.cursor()
                         
-                        if id_p and id_p > 0:
-                            c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = ?", (id_p,))
-                            row_p = c.fetchone()
+                        c.execute("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = ?", (id_h_del,))
+                        res_h = c.fetchone()
+                        
+                        if res_h:
+                            id_p, pres, cant = res_h
+                            cant = cant if cant and cant > 0 else 1
                             
-                            if row_p:
-                                bot, ml, dec = row_p
-                                if "Frasco" in str(pres):
-                                    c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, estado = 'En Stock' WHERE id = ?", (bot + cant, id_p))
-                                elif "Listo" in str(pres):
-                                    c.execute("UPDATE stock SET decants_10ml_preparados = ?, estado = 'En Stock' WHERE id = ?", (dec + cant, id_p))
-                                elif "abierto" in str(pres):
-                                    c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock' WHERE id = ?", (ml + (cant * 10), id_p))
+                            if id_p and id_p > 0:
+                                c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = ?", (id_p,))
+                                row_p = c.fetchone()
+                                
+                                if row_p:
+                                    bot, ml, dec = row_p
+                                    if "Frasco" in str(pres):
+                                        c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, estado = 'En Stock' WHERE id = ?", (bot + cant, id_p))
+                                    elif "Listo" in str(pres):
+                                        c.execute("UPDATE stock SET decants_10ml_preparados = ?, estado = 'En Stock' WHERE id = ?", (dec + cant, id_p))
+                                    elif "abierto" in str(pres):
+                                        c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock' WHERE id = ?", (ml + (cant * 10), id_p))
 
-                    c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
-                    conn.commit()
-                    conn.close()
-                    st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
-                    st.rerun()
+                        c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
+                        conn.commit()
+                        conn.close()
+                        st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para efectuar la anulación.")
 
                 st.markdown("---")
                 clave_hist = st.text_input("🔑 Clave Master (Vaciar historial):", type="password")
+                confirm_vaciar_hist = st.checkbox("⚠️ ¿Confirmar eliminación?")
                 if st.button("🚨 VACIAR HISTORIAL COMPLETO"):
-                    if clave_hist == CLAVE_ADMIN_MASTER:
+                    if clave_hist == CLAVE_ADMIN_MASTER and confirm_vaciar_hist:
                         conn = sqlite3.connect('inventario.db')
                         c = conn.cursor()
                         c.execute("DELETE FROM historial")
@@ -1876,7 +1929,7 @@ else:
                         st.warning("Historial vaciado.")
                         st.rerun()
                     else:
-                        st.error("Clave incorrecta.")
+                        st.error("Clave incorrecta o casilla de confirmación no marcada.")
             else:
                 st.info("Sin movimientos en el historial.")
 
@@ -1904,8 +1957,12 @@ else:
             uploaded_backup = st.file_uploader("Subir archivo de respaldo (.db):", type=["db"])
             
             if uploaded_backup is not None:
+                confirm_restore = st.checkbox("⚠️ ¿Confirmar eliminación?")
                 if st.button("⚠️ Confirmar y Restaurar Base de Datos"):
-                    with open("inventario.db", "wb") as f:
-                        f.write(uploaded_backup.getbuffer())
-                    st.success("¡Base de datos restaurada con éxito!")
-                    st.rerun()
+                    if confirm_restore:
+                        with open("inventario.db", "wb") as f:
+                            f.write(uploaded_backup.getbuffer())
+                        st.success("¡Base de datos restaurada con éxito!")
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para restaurar la base de datos.")

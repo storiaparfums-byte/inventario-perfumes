@@ -915,10 +915,13 @@ else:
                                 if chk_liberar:
                                     conn = sqlite3.connect('inventario.db')
                                     c = conn.cursor()
+                                    # Liberar stock
                                     c.execute("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
+                                    # Eliminar de la orden de compra automáticamente
+                                    c.execute("DELETE FROM ordenes_compra WHERE nombre = ? AND estado_inventario LIKE '%Señado%'", (row_sen['nombre'],))
                                     conn.commit()
                                     conn.close()
-                                    st.success("Reserva/Seña liberada. El producto volvió a 'En Stock'.")
+                                    st.success("Reserva/Seña liberada y removida de la Orden de Compra.")
                                     st.rerun()
                                 else:
                                     st.warning("Marca la casilla para confirmar.")
@@ -1121,7 +1124,7 @@ else:
                             mime="application/pdf"
                         )
                     with col_btn2:
-                        chk_limpiar_p = st.checkbox("⚠️ ¿Confirmar limpiar lista?")
+                        chk_limpiar_p = st.checkbox("⚠️ ¿Confirmar limpieza de lista?", key="chk_clear_presupuesto")
                         if st.button("🗑️ Limpiar Lista"):
                             if chk_limpiar_p:
                                 st.session_state.items_presupuesto = []
@@ -1177,7 +1180,7 @@ else:
                     with col_vi2:
                         cant_sel_v = st.number_input("Cantidad unidades:", min_value=1, value=1, step=1)
                         desc_ind_v = st.number_input("Descuento Individual a este producto ($ ARS):", min_value=0.0, value=0.0, step=500.0)
-                        dias_estimados_uso = st.selectbox("⏱️ Tiempo estimado de uso para recordatorio:", [30, 60, 90, 120, 180], index=2)
+                        dias_estimados_uso = st.selectbox("⏱️ Tiempo estimado de uso para recordatorio:", [1, 30, 60, 90, 120, 180], index=3)
                         
                     add_vitem = st.form_submit_button("➕ Agregar a la Venta")
 
@@ -1308,7 +1311,7 @@ else:
                             st.rerun()
 
                     with col_vbtn2:
-                        chk_canc_v = st.checkbox("⚠️ ¿Confirmar cancelación?")
+                        chk_canc_v = st.checkbox("⚠️ ¿Confirmar cancelación?", key="chk_cancel_venta")
                         if st.button("🗑️ Cancelar / Limpiar Lista"):
                             if chk_canc_v:
                                 st.session_state.items_venta = []
@@ -1370,7 +1373,7 @@ else:
                                     st.success("Registro eliminado.")
                                     st.rerun()
                                 else:
-                                    st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para borrar.")
+                                    st.warning("Marca la casilla para confirmar.")
                 else:
                     st.success("🎉 ¡No hay recordatorios pendientes para contactar hoy!")
 
@@ -1643,7 +1646,7 @@ else:
                         mime="application/pdf"
                     )
                 with col_ocbtn2:
-                    confirm_vaciar_oc = st.checkbox("⚠️ ¿Confirmar eliminación?")
+                    confirm_vaciar_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_oc_all")
                     if st.button("🚨 Vaciar Orden de Compra Completa"):
                         if confirm_vaciar_oc:
                             conn = sqlite3.connect('inventario.db')
@@ -1654,7 +1657,7 @@ else:
                             st.success("Orden de compra vaciada.")
                             st.rerun()
                         else:
-                            st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para vaciar toda la orden.")
+                            st.warning("Marca la casilla para vaciar toda la orden.")
             else:
                 st.info("No hay ítems agregados en la orden de compra actual.")
 
@@ -1841,12 +1844,14 @@ else:
                         st.rerun()
 
                 st.markdown("---")
-                confirm_del_prod = st.checkbox(f"⚠️ ¿Confirmar eliminación?")
+                confirm_del_prod = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prod_{id_mod}")
                 if st.button(f"🗑️ Eliminar '{prod_data['nombre']}'"):
                     if confirm_del_prod:
                         conn = sqlite3.connect('inventario.db')
                         c = conn.cursor()
                         c.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
+                        # Remover de ordenes de compra asociadas
+                        c.execute("DELETE FROM ordenes_compra WHERE nombre = ?", (prod_data['nombre'],))
                         conn.commit()
                         conn.close()
                         st.success("Perfume eliminado del sistema.")
@@ -1856,7 +1861,7 @@ else:
 
             st.markdown("---")
             clave_inv_input = st.text_input("🔑 Clave Master (Vaciar catálogo):", type="password")
-            confirm_vaciar_cat = st.checkbox("⚠️ ¿Confirmar eliminación?")
+            confirm_vaciar_cat = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_cat_master")
             if st.button("🚨 VACIAR CATALOGO COMPLETO"):
                 if clave_inv_input == CLAVE_ADMIN_MASTER and confirm_vaciar_cat:
                     conn = sqlite3.connect('inventario.db')
@@ -1882,7 +1887,7 @@ else:
                 reg_sel = st.selectbox("Selecciona movimiento a anular / eliminar:", opciones_hist)
                 id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
 
-                confirm_anular = st.checkbox("⚠️ ¿Confirmar eliminación?")
+                confirm_anular = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_anular_hist_{id_h_del}")
                 if st.button("🔄 Anular Movimiento & Devolver Stock Automáticamente"):
                     if confirm_anular:
                         conn = sqlite3.connect('inventario.db')
@@ -1914,11 +1919,11 @@ else:
                         st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
                         st.rerun()
                     else:
-                        st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para efectuar la anulación.")
+                        st.warning("Marca la casilla para efectuar la anulación.")
 
                 st.markdown("---")
                 clave_hist = st.text_input("🔑 Clave Master (Vaciar historial):", type="password")
-                confirm_vaciar_hist = st.checkbox("⚠️ ¿Confirmar eliminación?")
+                confirm_vaciar_hist = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_hist_master")
                 if st.button("🚨 VACIAR HISTORIAL COMPLETO"):
                     if clave_hist == CLAVE_ADMIN_MASTER and confirm_vaciar_hist:
                         conn = sqlite3.connect('inventario.db')
@@ -1957,7 +1962,7 @@ else:
             uploaded_backup = st.file_uploader("Subir archivo de respaldo (.db):", type=["db"])
             
             if uploaded_backup is not None:
-                confirm_restore = st.checkbox("⚠️ ¿Confirmar eliminación?")
+                confirm_restore = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_restore_backup_db")
                 if st.button("⚠️ Confirmar y Restaurar Base de Datos"):
                     if confirm_restore:
                         with open("inventario.db", "wb") as f:
@@ -1965,4 +1970,4 @@ else:
                         st.success("¡Base de datos restaurada con éxito!")
                         st.rerun()
                     else:
-                        st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para restaurar la base de datos.")
+                        st.warning("Marca la casilla para restaurar la base de datos.")

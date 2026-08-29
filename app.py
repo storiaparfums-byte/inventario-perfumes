@@ -850,7 +850,16 @@ else:
                             c.execute('''
                                 INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (f_actual, nom_item_senia, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", int(p_data_sen['id']), pres_senia_sel, 1))
+                            ''', (
+                                f_actual, 
+                                nom_item_senia, 
+                                socio_senia_sel, 
+                                f"📌 SEÑA recibida de {cli_senia_nom.strip()}", 
+                                monto_senia_val, 
+                                int(p_data_sen['id']), 
+                                pres_senia_sel, 
+                                1
+                            ))
 
                         if agregar_a_orden:
                             f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

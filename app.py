@@ -24,7 +24,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# URL pública de tu catálogo para enviar por WhatsApp
 URL_CATALOGO_PUBLICO = "https://storiaparfums.streamlit.app"
 
 # ---------------------------------------------------------
@@ -57,7 +56,7 @@ CATEGORIAS = [
 CLAVE_ADMIN_MASTER = "1234"
 
 # ---------------------------------------------------------
-# FUNCIÓN DE REDONDEO A NÚMEROS REDONDOS ($100 ARS)
+# FUNCIONES AUXILIARES DE MONEDA Y FORMATO
 # ---------------------------------------------------------
 def redondear_monto(monto, base=100):
     try:
@@ -77,21 +76,16 @@ def fmt_ars(monto):
 # ---------------------------------------------------------
 st.markdown("""
     <style>
-    /* Fondo Principal */
     .stApp {
         background-color: #1C1412;
         color: #F3EBE6;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
-    
-    /* Header / Títulos */
     h1, h2, h3 {
         color: #D4AF37 !important;
         font-weight: 300 !important;
         letter-spacing: 1px !important;
     }
-
-    /* Métrica / Stat Cards */
     [data-testid="stMetricValue"] {
         color: #E5C158 !important;
         font-size: 1.5rem !important;
@@ -99,8 +93,6 @@ st.markdown("""
     [data-testid="stMetricLabel"] {
         color: #C5A059 !important;
     }
-
-    /* Tarjetas de Perfumes */
     .perfume-card {
         background-color: #291D1A;
         border: 1px solid #3D2B27;
@@ -158,8 +150,6 @@ st.markdown("""
         font-size: 0.82rem;
         font-weight: bold;
     }
-
-    /* Control de Tamaño de Imágenes */
     .stImage > img {
         max-height: 160px !important;
         width: auto !important;
@@ -171,8 +161,6 @@ st.markdown("""
         padding: 4px !important;
         border: 1px solid #3D2B27 !important;
     }
-
-    /* Botones y WhatsApp */
     .stButton>button {
         background-color: #D4AF37 !important;
         color: #1C1412 !important;
@@ -202,14 +190,10 @@ st.markdown("""
     .btn-whatsapp:hover {
         background-color: #1EBE57;
     }
-
-    /* Sidebar / Menú Lateral */
     section[data-testid="stSidebar"] {
         background-color: #140E0D !important;
         border-right: 1px solid #291D1A;
     }
-
-    /* Input Fields */
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
         background-color: #291D1A !important;
         color: #FFFFFF !important;
@@ -328,7 +312,6 @@ def init_db():
         )
     ''')
 
-    # TABLA PERSISTENTE DE ORDENES DE COMPRA PARA COMPARTIR ENTRE SOCIOS
     c.execute('''
         CREATE TABLE IF NOT EXISTS ordenes_compra (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -628,7 +611,7 @@ modo_acceso = st.sidebar.radio(
 )
 
 # ---------------------------------------------------------
-# MODO 1: CATÁLOGO PÚBLICO CLIENTE (ACCESO LIBRE)
+# MODO 1: CATÁLOGO PÚBLICO CLIENTE (ACCESO LIBRE - SOLO CONSULTA)
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     st.header("📖 Catálogo de Fragancias")
@@ -679,7 +662,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             
         msg_encoded = urllib.parse.quote(msg_texto)
 
-        # Botones Directos de WhatsApp
         col_w1, col_w2, col_w3 = st.columns(3)
         with col_w1:
             st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded}" target="_blank" class="btn-whatsapp">💬 Consultar a Franco</a>', unsafe_allow_html=True)
@@ -730,7 +712,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             cnt_frascos = r.get("botellas_100ml_cerradas", 0)
             cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
 
-            # Badge de Stock para Decant en Catálogo
             if cnt_decants > 0:
                 stock_dec_html = f'<span class="stock-badge-green"> (🔥 {cnt_decants} decants en stock)</span>'
             elif cnt_frascos > 0 or cnt_ml_ab >= 10:
@@ -738,7 +719,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             else:
                 stock_dec_html = '<span class="stock-badge-red"> (Agotado)</span>'
 
-            # Estado Badge y cartel de Señado / Reservado
             if r['estado'] == "Pedido / Señado":
                 estado_class = "perfume-badge badge-senado"
                 m_sen = float(r.get("monto_senado_ars", 0.0))
@@ -820,7 +800,7 @@ else:
         # --- SECCIÓN: REGISTRAR SEÑA / RESERVA ---
         if seccion_admin == "📌 Registrar Seña / Reserva":
             st.header("📌 Registrar Seña o Reserva (Frascos o Decants)")
-            st.info("💡 Aparta un perfume o un decant. Puedes seleccionar si es **Seña (Con Pago)** para ingresar dinero a contabilidad o **Reserva (Sin Pago)** para bloquear la unidad.")
+            st.info("💡 Aparta un perfume. Si el perfume está **'A pedido'**, el socio decide si lo agrega a la Orden de Compra mediante consenso.")
 
             df_sen = cargar_datos_stock()
 
@@ -849,6 +829,8 @@ else:
                             monto_senia_val = 0.0
                             st.caption("ℹ️ La reserva sin pago no genera movimientos en la contabilidad.")
 
+                        agregar_a_orden = st.checkbox("📦 Agregar automáticamente a la Orden de Compra para Proveedor", value=True)
+
                     btn_guardar_senia = st.form_submit_button("📌 Confirmar Seña / Reserva")
 
                     if btn_guardar_senia and cli_senia_nom.strip() != "":
@@ -868,15 +850,22 @@ else:
                             c.execute('''
                                 INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (f_actual, nom_item_senia, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", monto_senia_val, int(p_data_sen['id']), pres_senia_sel, 1))
+                            ''', (f_actual, nom_item_senia, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", int(p_data_sen['id']), pres_senia_sel, 1))
+
+                        if agregar_a_orden:
+                            f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            det_res = f"SEÑADO/RESERVADO: {cli_senia_nom.strip()} ({fmt_ars(monto_senia_val)}) [{pres_senia_sel}]"
+                            costo_u = float(p_data_sen.get("costo_usd", 0.0))
+                            
+                            c.execute('''
+                                INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
+                                VALUES (?, ?, ?, 1, ?, 'A pedido / Señado', ?, ?)
+                            ''', (f_now, p_senia_sel, cap_sen, costo_u, det_res, socio_senia_sel))
 
                         conn.commit()
                         conn.close()
                         
-                        if monto_senia_val > 0:
-                            st.success(f"¡El producto **{nom_item_senia}** quedó SEÑADO por {cli_senia_nom.strip()} ({fmt_ars(monto_senia_val)})!")
-                        else:
-                            st.success(f"¡El producto **{nom_item_senia}** quedó RESERVADO sin pago por {cli_senia_nom.strip()}!")
+                        st.success(f"¡El producto quedó registrado como SEÑADO/RESERVADO con éxito!")
                         st.rerun()
 
                 st.markdown("---")
@@ -1173,7 +1162,8 @@ else:
                             "precio_unitario": p_unit_final,
                             "subtotal": p_unit_final * cant_sel_v,
                             "dias_estimados": dias_estimados_uso,
-                            "capacidad_ml": cap_v
+                            "capacidad_ml": cap_v,
+                            "costo_usd": float(p_data_v.get("costo_usd", 0.0))
                         })
                         st.success(f"Agregado {p_sel_v}")
 
@@ -1282,7 +1272,7 @@ else:
                             conn.commit()
                             conn.close()
                             st.session_state.items_venta = []
-                            st.success(f"¡Venta registrada con éxito y stock descontado!")
+                            st.success(f"¡Venta registrada con éxito!")
                             st.rerun()
 
                     with col_vbtn2:
@@ -1475,12 +1465,11 @@ else:
                 else:
                     st.caption("Sin ventas en este período.")
 
-        # --- SECCIÓN: ORDEN DE COMPRA PROVEEDOR (COMPARTIDA Y CON DÓLAR PROVEEDOR) ---
+        # --- SECCIÓN: ORDEN DE COMPRA PROVEEDOR ---
         elif seccion_admin == "📦 Orden de Compra Proveedor":
             st.header("📦 Generar Orden de Compra para Proveedor")
-            st.info("💡 Todos los ítems cargados aquí **quedan guardados en la base de datos** para que los vean todos los socios. Puedes ajustar el dólar específico del proveedor sin modificar la cotización general.")
+            st.info("💡 Todos los ítems cargados aquí quedan guardados en la base de datos compartida entre socios.")
 
-            # Campo Dólar Proveedor
             dolar_proveedor = st.number_input(
                 "💵 Cotización Dólar del Proveedor ($ ARS):",
                 min_value=1.0,
@@ -1553,7 +1542,6 @@ else:
                         st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
                         st.rerun()
 
-            # Cargar Orden de Compra Persistente desde SQLite
             df_oc_saved = cargar_ordenes_compra()
 
             if not df_oc_saved.empty:

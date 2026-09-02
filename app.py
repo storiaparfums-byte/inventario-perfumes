@@ -56,7 +56,7 @@ CATEGORIAS = [
 CLAVE_ADMIN_MASTER = "1234"
 
 # ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE MONEDA Y FORMATO
+# FUNCIONES AUXILIARES DE MONEDA, FORMATO Y TELEFONÍA
 # ---------------------------------------------------------
 def redondear_monto(monto, base=100):
     try:
@@ -80,6 +80,38 @@ def limpiar_int_ml(val, defecto=100):
         return int(val_clean) if val_clean else defecto
     except Exception:
         return defecto
+
+def formatear_celular_wa(numero_str):
+    """
+    Normaliza números de Argentina (Mendoza ej. 2611234567, 0261151234567)
+    a formato internacional compatible con api.whatsapp.me (5492611234567).
+    """
+    if not numero_str:
+        return ""
+    
+    num = re.sub(r'[^\d]', '', str(numero_str))
+    
+    if not num:
+        return ""
+    
+    if num.startswith("549"):
+        return num
+    
+    if num.startswith("54") and not num.startswith("549"):
+        num = num[2:]
+        
+    if num.startswith("0"):
+        num = num[1:]
+        
+    if num.startswith("26115"):
+        num = "261" + num[5:]
+    elif num.startswith("15"):
+        num = num[2:]
+
+    if not num.startswith("549"):
+        num = "549" + num
+        
+    return num
 
 # ---------------------------------------------------------
 # ESTILOS CSS PERSONALIZADOS (STORIA PARFUMS)
@@ -439,11 +471,19 @@ def extraer_perfume_y_precio(linea):
                 return None, None, 100
     return None, None, 100
 
+# ---------------------------------------------------------
+# GENERACIÓN DE PDFS ROBUSTOS Y SIN SUPERPOSICIÓN DE TEXTO
+# ---------------------------------------------------------
 def generar_pdf_catalogo(df_cat):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     styles = getSampleStyleSheet()
+    
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor("#222222"))
+    cell_bold = ParagraphStyle('CellBold', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor("#222222"), fontName="Helvetica-Bold")
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=COLOR_GOLD_PDF, fontName="Helvetica-Bold", alignment=1)
+
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, leading=26, textColor=COLOR_BG_PDF, alignment=1)
     subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontSize=11, leading=14, textColor=colors.HexColor("#777777"), alignment=1)
     
@@ -451,31 +491,31 @@ def generar_pdf_catalogo(df_cat):
     story.append(Paragraph("Catálogo Oficial de Fragancias", subtitle_style))
     story.append(Spacer(1, 15))
     
-    data = [["Perfume / Marca", "Género", "Presentación", "Estado", "Frasco Cerrado", "Decant 10 ml"]]
+    headers = ["Perfume / Marca", "Género", "Presentación", "Disponibilidad", "Frasco Cerrado", "Decant 10 ml"]
+    data = [[Paragraph(h, header_style) for h in headers]]
+    
     for _, row in df_cat.iterrows():
         cap = limpiar_int_ml(row.get("capacidad_ml", 100), 100)
         gen = row.get("genero", "Unisex")
         tipo_str = f" ({row['tipo']})" if row.get("tipo") else ""
+        est_publico = "Reservado / A pedido" if row["estado"] == "Pedido / Señado" else row["estado"]
+        
         data.append([
-            f"{row['nombre']}{tipo_str}",
-            gen,
-            f"{cap} ml",
-            row["estado"],
-            fmt_ars(row['precio_100ml']),
-            fmt_ars(row['precio_decant'])
+            Paragraph(f"{row['nombre']}{tipo_str}", cell_bold),
+            Paragraph(gen, cell_style),
+            Paragraph(f"{cap} ml", cell_style),
+            Paragraph(est_publico, cell_style),
+            Paragraph(fmt_ars(row['precio_100ml']), cell_style),
+            Paragraph(fmt_ars(row['precio_decant']), cell_style)
         ])
         
     t = Table(data, colWidths=[170, 55, 65, 80, 90, 90])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
-        ('TEXTCOLOR', (0,0), (-1,0), COLOR_GOLD_PDF),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 9),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
-        ('FONTSIZE', (0,1), (-1,-1), 8),
         ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ('TOPPADDING', (0,0), (-1,-1), 6),
     ]))
@@ -489,6 +529,10 @@ def generar_pdf_presupuesto(cliente, celular, socio_vendedor, items, subtotal, d
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35)
     story = []
     styles = getSampleStyleSheet()
+    
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor("#222222"))
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=COLOR_GOLD_PDF, fontName="Helvetica-Bold", alignment=1)
+
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, leading=26, textColor=COLOR_BG_PDF)
     meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor("#555555"))
     
@@ -501,45 +545,190 @@ def generar_pdf_presupuesto(cliente, celular, socio_vendedor, items, subtotal, d
     story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
     story.append(Spacer(1, 15))
     
-    data = [["Producto", "Presentación", "Cant.", "Precio Unitario", "Subtotal"]]
+    headers = ["Producto", "Presentación", "Cant.", "Precio Unitario", "Subtotal"]
+    data = [[Paragraph(h, header_style) for h in headers]]
+    
     for item in items:
         data.append([
-            item["nombre"],
-            item["presentacion"],
-            str(item["cantidad"]),
-            fmt_ars(item['precio_unitario']),
-            fmt_ars(item['subtotal'])
+            Paragraph(item["nombre"], cell_style),
+            Paragraph(item["presentacion"], cell_style),
+            Paragraph(str(item["cantidad"]), cell_style),
+            Paragraph(fmt_ars(item['precio_unitario']), cell_style),
+            Paragraph(fmt_ars(item['subtotal']), cell_style)
         ])
         
     t = Table(data, colWidths=[220, 90, 40, 100, 90])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
-        ('TEXTCOLOR', (0,0), (-1,0), COLOR_GOLD_PDF),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
         ('PADDING', (0,0), (-1,-1), 6),
     ]))
     story.append(t)
     story.append(Spacer(1, 15))
     
     totales_data = [
-        ["Subtotal:", fmt_ars(subtotal)],
-        ["Descuento Aplicado:", f"-{fmt_ars(descuento)}"],
-        ["TOTAL FINAL:", fmt_ars(total)]
+        [Paragraph("Subtotal:", cell_style), Paragraph(fmt_ars(subtotal), cell_style)],
+        [Paragraph("Descuento Aplicado:", cell_style), Paragraph(f"-{fmt_ars(descuento)}", cell_style)],
+        [Paragraph("<b>TOTAL FINAL:</b>", cell_style), Paragraph(f"<b>{fmt_ars(total)}</b>", cell_style)]
     ]
     t_tot = Table(totales_data, colWidths=[380, 160])
     t_tot.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
-        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('TEXTCOLOR', (0,-1), (-1,-1), COLOR_BG_PDF),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('PADDING', (0,0), (-1,-1), 4),
     ]))
     story.append(t_tot)
     
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def generar_pdf_reporte_contable(socio_filtro, periodo_str, df_ingresos, df_egresos, tot_ing, tot_eg, gan_neta):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    styles = getSampleStyleSheet()
+    
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor("#222222"))
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=COLOR_GOLD_PDF, fontName="Helvetica-Bold", alignment=1)
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=COLOR_BG_PDF)
+    meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor("#555555"))
+
+    story.append(Paragraph("STORIA PARFUMS - REPORTE CONTABLE", title_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"<b>Socio Vendedor:</b> {socio_filtro}", meta_style))
+    story.append(Paragraph(f"<b>Período Consultado:</b> {periodo_str}", meta_style))
+    story.append(Paragraph(f"<b>Fecha de Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
+    story.append(Spacer(1, 12))
+
+    # Resumen Financiero
+    resumen_data = [
+        [Paragraph("🟢 Total Ingresos", header_style), Paragraph("🔴 Total Gastos/Egresos", header_style), Paragraph("🏆 Ganancia Neta", header_style)],
+        [Paragraph(fmt_ars(tot_ing), cell_style), Paragraph(fmt_ars(tot_eg), cell_style), Paragraph(fmt_ars(gan_neta), cell_style)]
+    ]
+    t_res = Table(resumen_data, colWidths=[180, 180, 192])
+    t_res.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(t_res)
+    story.append(Spacer(1, 15))
+
+    # Tabla de Ingresos
+    story.append(Paragraph("<b>Detalle de Ingresos (Ventas y Señas)</b>", meta_style))
+    story.append(Spacer(1, 4))
+    
+    headers_ing = ["Fecha", "Perfume / Detalle", "Socio", "Tipo Movimiento", "Monto"]
+    data_ing = [[Paragraph(h, header_style) for h in headers_ing]]
+    
+    if not df_ingresos.empty:
+        for _, r in df_ingresos.iterrows():
+            data_ing.append([
+                Paragraph(str(r.get('fecha', '')), cell_style),
+                Paragraph(str(r.get('perfume', '')), cell_style),
+                Paragraph(str(r.get('socio', '')), cell_style),
+                Paragraph(str(r.get('tipo_movimiento', '')), cell_style),
+                Paragraph(fmt_ars(r.get('monto_ingreso_ars', 0)), cell_style)
+            ])
+    else:
+        data_ing.append([Paragraph("Sin datos", cell_style)] * 5)
+
+    t_ing = Table(data_ing, colWidths=[90, 160, 90, 112, 100])
+    t_ing.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('PADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t_ing)
+    story.append(Spacer(1, 15))
+
+    # Tabla de Egresos
+    story.append(Paragraph("<b>Detalle de Gastos y Egresos</b>", meta_style))
+    story.append(Spacer(1, 4))
+    
+    headers_eg = ["Fecha", "Categoría", "Descripción", "Registrado Por", "Monto"]
+    data_eg = [[Paragraph(h, header_style) for h in headers_eg]]
+    
+    if not df_egresos.empty:
+        for _, r in df_egresos.iterrows():
+            data_eg.append([
+                Paragraph(str(r.get('fecha', '')), cell_style),
+                Paragraph(str(r.get('categoria', '')), cell_style),
+                Paragraph(str(r.get('descripcion', '')), cell_style),
+                Paragraph(str(r.get('socio_registra', '')), cell_style),
+                Paragraph(fmt_ars(r.get('monto_ars', 0)), cell_style)
+            ])
+    else:
+        data_eg.append([Paragraph("Sin datos", cell_style)] * 5)
+
+    t_eg = Table(data_eg, colWidths=[90, 110, 152, 100, 100])
+    t_eg.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('PADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t_eg)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def generar_pdf_historial_ventas(df_hist_pdf, socio_filtro):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    styles = getSampleStyleSheet()
+    
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor("#222222"))
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8, leading=10, textColor=COLOR_GOLD_PDF, fontName="Helvetica-Bold", alignment=1)
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=COLOR_BG_PDF)
+    meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor("#555555"))
+
+    story.append(Paragraph("STORIA PARFUMS - HISTORIAL DE VENTAS", title_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"<b>Filtro Socio:</b> {socio_filtro}", meta_style))
+    story.append(Paragraph(f"<b>Fecha de Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
+    story.append(Spacer(1, 12))
+
+    headers = ["Fecha", "Perfume", "Presentación", "Cant.", "Socio", "Detalle / Operación", "Monto"]
+    data = [[Paragraph(h, header_style) for h in headers]]
+    
+    tot_monto = 0.0
+    if not df_hist_pdf.empty:
+        for _, r in df_hist_pdf.iterrows():
+            m_val = float(r.get('monto_ingreso_ars', 0.0))
+            tot_monto += m_val
+            data.append([
+                Paragraph(str(r.get('fecha', '')), cell_style),
+                Paragraph(str(r.get('perfume', '')), cell_style),
+                Paragraph(str(r.get('presentacion', '')), cell_style),
+                Paragraph(str(r.get('cantidad', 1)), cell_style),
+                Paragraph(str(r.get('socio', '')), cell_style),
+                Paragraph(str(r.get('tipo_movimiento', '')), cell_style),
+                Paragraph(fmt_ars(m_val), cell_style)
+            ])
+            
+    t = Table(data, colWidths=[80, 110, 80, 32, 80, 90, 80])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ('PADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10))
+    
+    story.append(Paragraph(f"<b>Total Acumulado en este reporte:</b> {fmt_ars(tot_monto)}", meta_style))
+
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -549,6 +738,10 @@ def generar_pdf_orden_compra(socio_emite, df_items, total_usd, total_ars, dolar_
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35)
     story = []
     styles = getSampleStyleSheet()
+    
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.HexColor("#222222"))
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=COLOR_GOLD_PDF, fontName="Helvetica-Bold", alignment=1)
+
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=20, leading=24, textColor=COLOR_BG_PDF)
     meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor("#555555"))
     
@@ -559,43 +752,40 @@ def generar_pdf_orden_compra(socio_emite, df_items, total_usd, total_ars, dolar_
     story.append(Paragraph(f"<b>Cotización Dólar Proveedor Aplicada:</b> {fmt_ars(dolar_prov)}", meta_style))
     story.append(Spacer(1, 15))
     
-    data = [["Perfume / Producto", "Estado / Reserva", "Cant.", "Costo USD", "Subtotal USD"]]
+    headers = ["Perfume / Producto", "Estado / Reserva", "Cant.", "Costo USD", "Subtotal USD"]
+    data = [[Paragraph(h, header_style) for h in headers]]
+    
     for _, row in df_items.iterrows():
         est_txt = row['estado_inventario']
         if row.get('detalle_reserva'):
             est_txt += f" ({row['detalle_reserva']})"
         data.append([
-            row["nombre"],
-            est_txt,
-            str(row["cantidad"]),
-            f"${row['costo_usd']:.2f}",
-            f"${row['subtotal_usd']:.2f}"
+            Paragraph(row["nombre"], cell_style),
+            Paragraph(est_txt, cell_style),
+            Paragraph(str(row["cantidad"]), cell_style),
+            Paragraph(f"${row['costo_usd']:.2f}", cell_style),
+            Paragraph(f"${row['subtotal_usd']:.2f}", cell_style)
         ])
         
     t = Table(data, colWidths=[200, 110, 40, 90, 100])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
-        ('TEXTCOLOR', (0,0), (-1,0), COLOR_GOLD_PDF),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
         ('PADDING', (0,0), (-1,-1), 6),
     ]))
     story.append(t)
     story.append(Spacer(1, 15))
     
     totales_data = [
-        ["Total Estimado USD:", f"${total_usd:.2f} USD"],
-        ["Total Estimado ARS (Dólar Prov.):", fmt_ars(total_ars)]
+        [Paragraph("Total Estimado USD:", cell_style), Paragraph(f"${total_usd:.2f} USD", cell_style)],
+        [Paragraph("Total Estimado ARS (Dólar Prov.):", cell_style), Paragraph(fmt_ars(total_ars), cell_style)]
     ]
     t_tot = Table(totales_data, colWidths=[380, 160])
     t_tot.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
-        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('TEXTCOLOR', (0,-1), (-1,-1), COLOR_BG_PDF),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('PADDING', (0,0), (-1,-1), 4),
     ]))
     story.append(t_tot)
@@ -724,23 +914,14 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             cnt_frascos = r.get("botellas_100ml_cerradas", 0)
             cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
 
-            if cnt_decants > 0:
-                stock_dec_html = f'<span class="stock-badge-green"> (🔥 {cnt_decants} decants en stock)</span>'
-            elif cnt_frascos > 0 or cnt_ml_ab >= 10:
-                stock_dec_html = '<span class="stock-badge-green"> (Disponible a pedido)</span>'
+            if cnt_decants > 0 or cnt_ml_ab >= 10:
+                stock_dec_html = '<span class="stock-badge-green"> (Disponible)</span>'
             else:
-                stock_dec_html = '<span class="stock-badge-red"> (Agotado)</span>'
+                stock_dec_html = '<span class="stock-badge-red"> (A pedido)</span>'
 
             if r['estado'] == "Pedido / Señado":
                 estado_class = "perfume-badge badge-senado"
-                m_sen = float(r.get("monto_senado_ars", 0.0))
-                cli_sen = str(r.get("cliente_senado", ""))
-                
-                if m_sen > 0:
-                    txt_sen = f"📌 SEÑADO por {cli_sen}" if cli_sen else "📌 SEÑADO"
-                    txt_sen += f" (Seña: {fmt_ars(m_sen)})"
-                else:
-                    txt_sen = f"🔒 RESERVADO por {cli_sen}" if cli_sen else "🔒 RESERVADO (Sin Pago)"
+                txt_sen = "📌 RESERVADO / A PEDIDO"
             else:
                 estado_class = "perfume-badge"
                 txt_sen = r['estado']
@@ -812,7 +993,7 @@ else:
         # --- SECCIÓN: REGISTRAR SEÑA / RESERVA ---
         if seccion_admin == "📌 Registrar Seña / Reserva":
             st.header("📌 Registrar Seña o Reserva (Frascos o Decants)")
-            st.info("💡 Aparta un perfume. Si el perfume está **'A pedido'**, el socio decide si lo agrega a la Orden de Compra mediante consenso.")
+            st.info("💡 Aparta un perfume. En el catálogo público solo aparecerá como 'RESERVADO / A PEDIDO' sin revelar el nombre del cliente ni montos.")
 
             df_sen = cargar_datos_stock()
 
@@ -875,7 +1056,7 @@ else:
 
                         if agregar_a_orden:
                             f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            det_res = f"SEÑADO/RESERVADO: {cli_senia_nom.strip()} ({fmt_ars(monto_senia_val)}) [{pres_senia_sel}]"
+                            det_res = f"RESERVA/SEÑA: {cli_senia_nom.strip()} [{pres_senia_sel}]"
                             costo_u = float(p_data_sen.get("costo_usd", 0.0))
                             
                             c.execute('''
@@ -890,7 +1071,7 @@ else:
                         st.rerun()
 
                 st.markdown("---")
-                st.subheader("📋 Productos Actualmente Señados o Reservados")
+                st.subheader("📋 Productos Actualmente Señados o Reservados (Vista Interna)")
                 df_senados_list = df_sen[df_sen["estado"] == "Pedido / Señado"]
 
                 if not df_senados_list.empty:
@@ -1021,7 +1202,7 @@ else:
             with col_pr1:
                 nombre_cliente = st.text_input("Nombre del Cliente / Contacto:", value="Cliente")
             with col_pr2:
-                celular_cliente = st.text_input("Celular del Cliente (Opcional):", placeholder="Ej: 2611234567")
+                celular_cliente = st.text_input("Celular del Cliente (Ej: 2611234567):", placeholder="Ej: 2611234567")
             with col_pr3:
                 socio_presupuesto = st.selectbox(
                     "👤 Socio Vendedor (Obligatorio):", 
@@ -1076,7 +1257,6 @@ else:
                 if st.session_state.items_presupuesto:
                     st.subheader("🛒 Items en el Presupuesto")
                     
-                    # Desglose interactivo con botón de eliminación individual
                     for idx_p, item_p in enumerate(st.session_state.items_presupuesto):
                         col_pi1, col_pi2, col_pi3, col_pi4, col_pi5 = st.columns([3, 2, 1, 2, 1])
                         with col_pi1:
@@ -1152,7 +1332,7 @@ else:
             with col_vcli1:
                 cliente_venta = st.text_input("Nombre del Cliente:", value="Cliente")
             with col_vcli2:
-                celular_venta = st.text_input("Número de Celular del Cliente (Ej: 5492613350949):", placeholder="Ej: 5492613350949")
+                celular_venta = st.text_input("Número de Celular del Cliente (Ej: 2611234567):", placeholder="Ej: 2611234567")
             with col_vcli3:
                 socio_vendedor_real = st.selectbox(
                     "👤 Socio Vendedor que realizó la venta (Obligatorio):", 
@@ -1218,7 +1398,6 @@ else:
                     st.markdown("---")
                     st.subheader("🛒 Resumen de la Venta a Confirmar")
                     
-                    # Desglose interactivo con opción de eliminar ítem individual en Venta
                     for idx_v, item_v in enumerate(st.session_state.items_venta):
                         col_vi_1, col_vi_2, col_vi_3, col_vi_4, col_vi_5 = st.columns([3, 2, 1, 2, 1])
                         with col_vi_1:
@@ -1288,7 +1467,10 @@ else:
 
                                     if "Frasco" in pres:
                                         nuevas_botellas = max(0, botellas - cant)
-                                        nuevo_est = "En Stock" if nuevas_botellas > 0 else "A pedido"
+                                        if nuevas_botellas > 0 or decants > 0 or ml >= 10:
+                                            nuevo_est = "En Stock"
+                                        else:
+                                            nuevo_est = "A pedido"
                                             
                                         c.execute('''
                                             UPDATE stock 
@@ -1298,7 +1480,10 @@ else:
 
                                     elif "Listo" in pres:
                                         nuevos_decants = max(0, decants - cant)
-                                        nuevo_est = "En Stock" if (nuevos_decants > 0 or botellas > 0) else "A pedido"
+                                        if nuevos_decants > 0 or botellas > 0 or ml >= 10:
+                                            nuevo_est = "En Stock"
+                                        else:
+                                            nuevo_est = "A pedido"
                                             
                                         c.execute('''
                                             UPDATE stock 
@@ -1309,11 +1494,16 @@ else:
                                     elif "abierto" in pres:
                                         ml_necesarios = cant * 10
                                         if ml >= ml_necesarios:
-                                            c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (ml - ml_necesarios, id_p))
+                                            nuevos_ml = ml - ml_necesarios
+                                            if nuevos_ml >= 10 or botellas > 0 or decants > 0:
+                                                nuevo_est = "En Stock"
+                                            else:
+                                                nuevo_est = "A pedido"
+                                            c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (nuevos_ml, nuevo_est, id_p))
                                         elif botellas > 0:
                                             nuevas_bot = botellas - 1
                                             nuevos_ml = ml + cap_tot - ml_necesarios
-                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml > 0) else "A pedido"
+                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml >= 10) else "A pedido"
                                             c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, estado = ? WHERE id = ?", (nuevas_bot, nuevos_ml, nuevo_est, id_p))
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
@@ -1365,7 +1555,8 @@ else:
                     for _, row_c in df_vencidos.iterrows():
                         msg_auto = f"Hola {row_c['cliente_nombre']}! Te escribimos de STORIA PARFUMS. Esperamos que estés disfrutando tu perfume {row_c['perfume']} ✨. Calculamos que ya debe estar por terminarse o listo para renovar. Te dejamos nuestro catálogo actualizado: {URL_CATALOGO_PUBLICO}"
                         msg_enc = urllib.parse.quote(msg_auto)
-                        cel_clean = re.sub(r'[^\d]', '', str(row_c['cliente_celular']))
+                        
+                        cel_clean = formatear_celular_wa(row_c['cliente_celular'])
                         
                         col_seg1, col_seg2 = st.columns([3, 1])
                         with col_seg1:
@@ -1432,7 +1623,7 @@ else:
         # --- SECCIÓN: CONTABILIDAD Y GASTOS ---
         elif seccion_admin == "📊 Contabilidad & Gastos":
             st.header("📊 Contabilidad, Gastos y Balance de Caja")
-            st.info("💡 Lleva el control contable completo con reportes temporales. Selecciona un período para calcular montos totales por día, mes o rango.")
+            st.info("💡 Lleva el control contable completo con reportes temporales y filtros por socio.")
 
             with st.expander("➕ Registrar Nuevo Gasto / Egreso"):
                 with st.form("form_egreso", clear_on_submit=True):
@@ -1457,19 +1648,25 @@ else:
                         st.rerun()
 
             st.markdown("---")
-            st.subheader("📅 Filtro de Fecha para Reportes Contables")
+            st.subheader("📅 Filtro de Fecha y Socio para Reportes Contables")
+
+            col_cf1, col_cf2 = st.columns([2, 1])
+            with col_cf1:
+                tipo_filtro_f = st.radio(
+                    "Selecciona Período a consultar:",
+                    ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"],
+                    horizontal=True
+                )
+            with col_cf2:
+                socio_filtro_contable = st.selectbox("👤 Filtrar Vendedor:", ["Todos los Socios"] + SOCIOS)
 
             df_hist_c = cargar_historial()
             df_eg_c = cargar_egresos()
 
-            tipo_filtro_f = st.radio(
-                "Selecciona Período a consultar:",
-                ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"],
-                horizontal=True
-            )
-
             df_h_filt = df_hist_c.copy()
             df_e_filt = df_eg_c.copy()
+
+            periodo_txt = "Todo el Histórico"
 
             if tipo_filtro_f == "Por Mes / Año":
                 col_m1, col_m2 = st.columns(2)
@@ -1478,6 +1675,7 @@ else:
                 with col_m2:
                     anio_sel = st.number_input("Año:", min_value=2020, max_value=2030, value=datetime.now().year)
 
+                periodo_txt = f"{mes_sel}/{anio_sel}"
                 if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
                     df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.month == mes_sel) & (df_h_filt["fecha_dt"].dt.year == anio_sel)]
                 if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
@@ -1486,6 +1684,7 @@ else:
             elif tipo_filtro_f == "Por Día Específico":
                 dia_sel = st.date_input("Selecciona Día:", value=datetime.now().date())
                 dia_str = dia_sel.strftime("%Y-%m-%d")
+                periodo_txt = dia_str
 
                 if not df_h_filt.empty and "fecha" in df_h_filt.columns:
                     df_h_filt = df_h_filt[df_h_filt["fecha"].astype(str).str.startswith(dia_str)]
@@ -1499,10 +1698,16 @@ else:
                 with col_r2:
                     f_fin = st.date_input("Fecha Fin:", value=datetime.now().date())
 
+                periodo_txt = f"{f_inicio.strftime('%d/%m/%Y')} al {f_fin.strftime('%d/%m/%Y')}"
                 if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
                     df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.date >= f_inicio) & (df_h_filt["fecha_dt"].dt.date <= f_fin)]
                 if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
                     df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.date >= f_inicio) & (df_e_filt["fecha_dt"].dt.date <= f_fin)]
+
+            # Aplicar filtro por socio en ventas
+            if socio_filtro_contable != "Todos los Socios":
+                if not df_h_filt.empty and "socio" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[df_h_filt["socio"] == socio_filtro_contable]
 
             total_ingresos = df_h_filt["monto_ingreso_ars"].sum() if not df_h_filt.empty and "monto_ingreso_ars" in df_h_filt.columns else 0.0
             total_egresos = df_e_filt["monto_ars"].sum() if not df_e_filt.empty and "monto_ars" in df_e_filt.columns else 0.0
@@ -1519,6 +1724,15 @@ else:
                 st.metric("🏆 GANANCIA NETA", fmt_ars(ganancia_neta))
             with col_m4:
                 st.metric("🛒 Cantidad Ventas", str(cant_ventas))
+
+            st.markdown("---")
+            pdf_contable_bytes = generar_pdf_reporte_contable(socio_filtro_contable, periodo_txt, df_h_filt, df_e_filt, total_ingresos, total_egresos, ganancia_neta)
+            st.download_button(
+                label="📄 Descargar Reporte Contable Completo (PDF)",
+                data=pdf_contable_bytes,
+                file_name=f"Reporte_Contable_Storia_{socio_filtro_contable.replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )
 
             st.markdown("---")
             col_tab1, col_tab2 = st.columns(2)
@@ -1566,8 +1780,7 @@ else:
                             det_reserva = ""
                             if est_inv == "Pedido / Señado":
                                 cli_s = p_data_oc.get("cliente_senado", "")
-                                m_s = float(p_data_oc.get("monto_senado_ars", 0))
-                                det_reserva = f"SEÑADO/RESERVADO: {cli_s} ({fmt_ars(m_s)})"
+                                det_reserva = f"RESERVA/SEÑA: {cli_s}"
                                 st.caption(f"📌 **Estado Actual:** {est_inv} - {det_reserva}")
                             else:
                                 st.caption(f"📌 **Estado Actual:** {est_inv}")
@@ -1905,9 +2118,34 @@ else:
             df_hist = cargar_historial()
 
             if not df_hist.empty:
-                st.dataframe(df_hist.drop(columns=['id', 'fecha_dt'], errors='ignore'), use_container_width=True)
+                col_hf1, col_hf2 = st.columns([2, 1])
+                with col_hf1:
+                    busq_hist_p = st.text_input("🔍 Buscar por perfume o cliente:", placeholder="Ej. Khamrah, Juan...")
+                with col_hf2:
+                    filtro_socio_hist = st.selectbox("👤 Filtrar por Socio:", ["Todos los Socios"] + SOCIOS)
+
+                df_hist_filt = df_hist.copy()
+
+                if busq_hist_p:
+                    df_hist_filt = df_hist_filt[
+                        df_hist_filt["perfume"].astype(str).str.contains(busq_hist_p, case=False, na=False) |
+                        df_hist_filt["tipo_movimiento"].astype(str).str.contains(busq_hist_p, case=False, na=False)
+                    ]
+
+                if filtro_socio_hist != "Todos los Socios":
+                    df_hist_filt = df_hist_filt[df_hist_filt["socio"] == filtro_socio_hist]
+
+                st.dataframe(df_hist_filt.drop(columns=['id', 'fecha_dt'], errors='ignore'), use_container_width=True)
+
+                pdf_hist_bytes = generar_pdf_historial_ventas(df_hist_filt, filtro_socio_hist)
+                st.download_button(
+                    label="📄 Descargar Historial de Ventas (PDF)",
+                    data=pdf_hist_bytes,
+                    file_name=f"Historial_Ventas_Storia_{filtro_socio_hist.replace(' ', '_')}.pdf",
+                    mime="application/pdf"
+                )
+
                 st.markdown("---")
-                
                 opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} ({row['tipo_movimiento']})" for _, row in df_hist.iterrows()]
                 reg_sel = st.selectbox("Selecciona movimiento a anular / eliminar:", opciones_hist)
                 id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))

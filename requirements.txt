@@ -2,4 +2,4 @@ streamlit
 pandas
 pypdf
 reportlab
-st-gsheets-connection
+libsql-experimental

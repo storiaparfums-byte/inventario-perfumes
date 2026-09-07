@@ -56,7 +56,7 @@ CATEGORIAS = [
 CLAVE_ADMIN_MASTER = "1234"
 
 # ---------------------------------------------------------
-# CONEXIÓN A BASE DE DATOS TURSO VÍA HTTP API (ULTRA RÁPIDO)
+# CONEXIÓN A BASE DE DATOS TURSO VÍA HTTP API
 # ---------------------------------------------------------
 def query_turso_http(sql, params=()):
     url = st.secrets["TURSO_DATABASE_URL"]
@@ -94,7 +94,7 @@ def query_turso_http(sql, params=()):
         "Content-Type": "application/json"
     }
 
-    resp = requests.post(url, json=payload, headers=headers, timeout=10)
+    resp = requests.post(url, json=payload, headers=headers, timeout=15)
     resp.raise_for_status()
     data = resp.json()
 
@@ -304,17 +304,17 @@ def init_db():
             tipo TEXT,
             genero TEXT DEFAULT 'Unisex',
             capacidad_ml INTEGER DEFAULT 100,
-            botellas_100ml_cerradas INTEGER,
-            ml_disponibles_abiertos INTEGER,
-            decants_10ml_preparados INTEGER,
-            costo_usd REAL,
+            botellas_100ml_cerradas INTEGER DEFAULT 0,
+            ml_disponibles_abiertos INTEGER DEFAULT 0,
+            decants_10ml_preparados INTEGER DEFAULT 0,
+            costo_usd REAL DEFAULT 0.0,
             margen_100ml_custom REAL,
-            estado TEXT,
-            socio_asignado TEXT,
+            estado TEXT DEFAULT 'A pedido',
+            socio_asignado TEXT DEFAULT '',
             monto_senado_ars REAL DEFAULT 0.0,
             cliente_senado TEXT DEFAULT '',
-            notas_olfativas TEXT,
-            imagen_url TEXT
+            notas_olfativas TEXT DEFAULT '',
+            imagen_url TEXT DEFAULT ''
         )
     ''')
 
@@ -392,9 +392,9 @@ except Exception as e:
     st.error(f"Error al conectar con la base de datos Turso: {e}")
 
 # ---------------------------------------------------------
-# CARGA CON CACHÉ PARA VELOCIDAD EXTREMA
+# CARGA CON CACHÉ DE CORTO TIEMPO
 # ---------------------------------------------------------
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def cargar_datos_stock():
     df = fetch_df("SELECT * FROM stock")
     if not df.empty:
@@ -404,32 +404,32 @@ def cargar_datos_stock():
             df["genero"] = df["genero"].fillna("Unisex").replace("", "Unisex")
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def cargar_historial():
     df = fetch_df("SELECT * FROM historial ORDER BY id DESC")
     if not df.empty and "fecha" in df.columns:
         df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def cargar_egresos():
     df = fetch_df("SELECT * FROM egresos ORDER BY id DESC")
     if not df.empty and "fecha" in df.columns:
         df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def cargar_seguimiento():
     return fetch_df("SELECT * FROM clientes_seguimiento ORDER BY fecha_recordatorio ASC")
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def cargar_ordenes_compra():
     df = fetch_df("SELECT * FROM ordenes_compra ORDER BY id ASC")
     if not df.empty and "capacidad_ml" in df.columns:
         df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def cargar_config():
     df = fetch_df("SELECT cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars FROM config WHERE id = 1")
     if not df.empty:
@@ -1782,7 +1782,12 @@ else:
             if uploaded_pdf is not None:
                 try:
                     reader = pypdf.PdfReader(uploaded_pdf)
-                    texto_completo = "".join([page.extract_text() + "\n" for page in reader.pages])
+                    texto_completo = ""
+                    for page in reader.pages:
+                        txt_p = page.extract_text()
+                        if txt_p:
+                            texto_completo += txt_p + "\n"
+
                     items = []
                     for l in texto_completo.split("\n"):
                         p_nom, p_cost, p_cap = extraer_perfume_y_precio(l)
@@ -1797,27 +1802,30 @@ else:
                         st.dataframe(df_pdf, use_container_width=True)
 
                         if st.button("🚀 Sincronizar Catálogo"):
-                            df_ex = fetch_df("SELECT id, nombre FROM stock")
-                            dict_existentes = {}
-                            if not df_ex.empty:
-                                dict_existentes = {normalizar_texto(r["nombre"]): r["id"] for _, r in df_ex.iterrows()}
-                            
-                            cargados, actualizados = 0, 0
-                            for _, r in df_pdf.iterrows():
-                                nom_norm = normalizar_texto(r['nombre'])
-                                if nom_norm in dict_existentes:
-                                    execute_query("UPDATE stock SET costo_usd = ?, capacidad_ml = ? WHERE id = ?", (r['costo_usd'], int(r['capacidad_ml']), dict_existentes[nom_norm]))
-                                    actualizados += 1
-                                else:
-                                    execute_query('''
-                                        INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                                        VALUES (?, '', 'Unisex', ?, 0, 0, 0, ?, 'A pedido', '')
-                                    ''', (r['nombre'], int(r['capacidad_ml']), r['costo_usd']))
-                                    cargados += 1
+                            with st.spinner("Sincronizando catálogo en Turso..."):
+                                df_ex = fetch_df("SELECT id, nombre FROM stock")
+                                dict_existentes = {}
+                                if not df_ex.empty:
+                                    dict_existentes = {normalizar_texto(r["nombre"]): r["id"] for _, r in df_ex.iterrows()}
+                                
+                                cargados, actualizados = 0, 0
+                                for _, r in df_pdf.iterrows():
+                                    nom_norm = normalizar_texto(r['nombre'])
+                                    if nom_norm in dict_existentes:
+                                        execute_query("UPDATE stock SET costo_usd = ?, capacidad_ml = ? WHERE id = ?", (r['costo_usd'], int(r['capacidad_ml']), dict_existentes[nom_norm]))
+                                        actualizados += 1
+                                    else:
+                                        execute_query('''
+                                            INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                                            VALUES (?, '', 'Unisex', ?, 0, 0, 0, ?, 'A pedido', '')
+                                        ''', (r['nombre'], int(r['capacidad_ml']), r['costo_usd']))
+                                        cargados += 1
 
-                            st.cache_data.clear()
-                            st.success(f"¡Sincronizado! {actualizados} precios/volúmenes actualizados y {cargados} perfumes nuevos agregados.")
-                            st.rerun()
+                                st.cache_data.clear()
+                                st.success(f"¡Sincronizado! {actualizados} precios/volúmenes actualizados y {cargados} perfumes nuevos agregados.")
+                                st.rerun()
+                    else:
+                        st.warning("No se encontraron productos o precios válidos dentro del archivo PDF subido.")
                 except Exception as e:
                     st.error(f"Error procesando PDF: {e}")
 
@@ -1988,7 +1996,7 @@ else:
             else:
                 st.info("Sin movimientos en el historial.")
 
-        # --- SECCIÓN: COPIAS DE SEGURIDAD (BACKUP & RESTAURACIÓN CORREGIDA) ---
+        # --- SECCIÓN: COPIAS DE SEGURIDAD (BACKUP & RESTAURACIÓN OPTIMIZADA) ---
         elif seccion_admin == "💾 Copias de Seguridad":
             st.header("💾 Copias de Seguridad (Backup y Restauración)")
             st.info("💡 Descarga un archivo con toda la información guardada o restaura una copia de seguridad anterior.")
@@ -2018,7 +2026,7 @@ else:
 
             with tab_bk2:
                 st.subheader("📤 Cargar y Restaurar Copia de Seguridad")
-                st.warning("⚠️ **Atención:** Al restaurar la copia de seguridad se insertarán/actualizarán todos los registros en la base de datos.")
+                st.warning("⚠️ **Atención:** Al restaurar se insertarán o actualizarán todos los datos en la base de datos.")
                 
                 uploaded_backup = st.file_uploader("Selecciona el archivo de Backup (.json):", type=["json"])
 
@@ -2034,80 +2042,63 @@ else:
 
                         if st.button("🚀 Iniciar Restauración"):
                             if confirm_restore:
-                                with st.spinner("Restaurando datos en Turso... Por favor aguarda unos segundos."):
-                                    # Restaurar Stock
-                                    if "stock" in data_restaurar and data_restaurar["stock"]:
-                                        for r in data_restaurar["stock"]:
-                                            execute_query('''
-                                                INSERT INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
-                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                                ON CONFLICT(id) DO UPDATE SET
-                                                    nombre=excluded.nombre, tipo=excluded.tipo, genero=excluded.genero, capacidad_ml=excluded.capacidad_ml,
-                                                    botellas_100ml_cerradas=excluded.botellas_100ml_cerradas, ml_disponibles_abiertos=excluded.ml_disponibles_abiertos,
-                                                    decants_10ml_preparados=excluded.decants_10ml_preparados, costo_usd=excluded.costo_usd,
-                                                    margen_100ml_custom=excluded.margen_100ml_custom, estado=excluded.estado, socio_asignado=excluded.socio_asignado,
-                                                    monto_senado_ars=excluded.monto_senado_ars, cliente_senado=excluded.cliente_senado,
-                                                    notas_olfativas=excluded.notas_olfativas, imagen_url=excluded.imagen_url
-                                                ON CONFLICT(nombre) DO UPDATE SET
-                                                    tipo=excluded.tipo, genero=excluded.genero, capacidad_ml=excluded.capacidad_ml,
-                                                    botellas_100ml_cerradas=excluded.botellas_100ml_cerradas, ml_disponibles_abiertos=excluded.ml_disponibles_abiertos,
-                                                    decants_10ml_preparados=excluded.decants_10ml_preparados, costo_usd=excluded.costo_usd,
-                                                    margen_100ml_custom=excluded.margen_100ml_custom, estado=excluded.estado, socio_asignado=excluded.socio_asignado,
-                                                    monto_senado_ars=excluded.monto_senado_ars, cliente_senado=excluded.cliente_senado,
-                                                    notas_olfativas=excluded.notas_olfativas, imagen_url=excluded.imagen_url
-                                            ''', (
-                                                r.get("id"), r.get("nombre"), r.get("tipo", ""), r.get("genero", "Unisex"), r.get("capacidad_ml", 100),
-                                                r.get("botellas_100ml_cerradas", 0), r.get("ml_disponibles_abiertos", 0), r.get("decants_10ml_preparados", 0),
-                                                r.get("costo_usd", 0.0), r.get("margen_100ml_custom"), r.get("estado", "A pedido"), r.get("socio_asignado", ""),
-                                                r.get("monto_senado_ars", 0.0), r.get("cliente_senado", ""), r.get("notas_olfativas", ""), r.get("imagen_url", "")
-                                            ))
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                status_text.text("Restaurando datos en Turso... Por favor aguarda.")
 
-                                    # Restaurar Historial
-                                    if "historial" in data_restaurar and data_restaurar["historial"]:
-                                        for r in data_restaurar["historial"]:
-                                            execute_query('''
-                                                INSERT INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
-                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                                ON CONFLICT(id) DO UPDATE SET
-                                                    fecha=excluded.fecha, perfume=excluded.perfume, socio=excluded.socio, tipo_movimiento=excluded.tipo_movimiento,
-                                                    monto_ingreso_ars=excluded.monto_ingreso_ars, id_producto=excluded.id_producto, presentacion=excluded.presentacion, cantidad=excluded.cantidad
-                                            ''', (
-                                                r.get("id"), r.get("fecha"), r.get("perfume"), r.get("socio"), r.get("tipo_movimiento"),
-                                                r.get("monto_ingreso_ars", 0.0), r.get("id_producto", 0), r.get("presentacion", ""), r.get("cantidad", 1)
-                                            ))
+                                # Restaurar Stock usando INSERT OR REPLACE
+                                if "stock" in data_restaurar and data_restaurar["stock"]:
+                                    stock_rows = data_restaurar["stock"]
+                                    for idx_r, r in enumerate(stock_rows):
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("nombre"), r.get("tipo", ""), r.get("genero", "Unisex"), r.get("capacidad_ml", 100),
+                                            r.get("botellas_100ml_cerradas", 0), r.get("ml_disponibles_abiertos", 0), r.get("decants_10ml_preparados", 0),
+                                            r.get("costo_usd", 0.0), r.get("margen_100ml_custom"), r.get("estado", "A pedido"), r.get("socio_asignado", ""),
+                                            r.get("monto_senado_ars", 0.0), r.get("cliente_senado", ""), r.get("notas_olfativas", ""), r.get("imagen_url", "")
+                                        ))
+                                        progress_bar.progress(int((idx_r + 1) / len(stock_rows) * 50))
 
-                                    # Restaurar Egresos
-                                    if "egresos" in data_restaurar and data_restaurar["egresos"]:
-                                        for r in data_restaurar["egresos"]:
-                                            execute_query('''
-                                                INSERT INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
-                                                VALUES (?, ?, ?, ?, ?, ?)
-                                                ON CONFLICT(id) DO UPDATE SET
-                                                    fecha=excluded.fecha, categoria=excluded.categoria, descripcion=excluded.descripcion,
-                                                    monto_ars=excluded.monto_ars, socio_registra=excluded.socio_registra
-                                            ''', (
-                                                r.get("id"), r.get("fecha"), r.get("categoria"), r.get("descripcion"),
-                                                r.get("monto_ars", 0.0), r.get("socio_registra")
-                                            ))
+                                # Restaurar Historial
+                                if "historial" in data_restaurar and data_restaurar["historial"]:
+                                    for r in data_restaurar["historial"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("fecha"), r.get("perfume"), r.get("socio"), r.get("tipo_movimiento"),
+                                            r.get("monto_ingreso_ars", 0.0), r.get("id_producto", 0), r.get("presentacion", ""), r.get("cantidad", 1)
+                                        ))
 
-                                    # Restaurar Clientes Seguimiento
-                                    if "clientes_seguimiento" in data_restaurar and data_restaurar["clientes_seguimiento"]:
-                                        for r in data_restaurar["clientes_seguimiento"]:
-                                            execute_query('''
-                                                INSERT INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
-                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                                ON CONFLICT(id) DO UPDATE SET
-                                                    fecha_compra=excluded.fecha_compra, cliente_nombre=excluded.cliente_nombre, cliente_celular=excluded.cliente_celular,
-                                                    socio_vendedor=excluded.socio_vendedor, perfume=excluded.perfume, presentacion=excluded.presentacion,
-                                                    dias_estimados=excluded.dias_estimados, fecha_recordatorio=excluded.fecha_recordatorio, estado=excluded.estado
-                                            ''', (
-                                                r.get("id"), r.get("fecha_compra"), r.get("cliente_nombre"), r.get("cliente_celular"),
-                                                r.get("socio_vendedor"), r.get("perfume"), r.get("presentacion"), r.get("dias_estimados", 90),
-                                                r.get("fecha_recordatorio"), r.get("estado", "Pendiente")
-                                            ))
+                                # Restaurar Egresos
+                                if "egresos" in data_restaurar and data_restaurar["egresos"]:
+                                    for r in data_restaurar["egresos"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
+                                            VALUES (?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("fecha"), r.get("categoria"), r.get("descripcion"),
+                                            r.get("monto_ars", 0.0), r.get("socio_registra")
+                                        ))
 
+                                # Restaurar Clientes Seguimiento
+                                if "clientes_seguimiento" in data_restaurar and data_restaurar["clientes_seguimiento"]:
+                                    for r in data_restaurar["clientes_seguimiento"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("fecha_compra"), r.get("cliente_nombre"), r.get("cliente_celular"),
+                                            r.get("socio_vendedor"), r.get("perfume"), r.get("presentacion"), r.get("dias_estimados", 90),
+                                            r.get("fecha_recordatorio"), r.get("estado", "Pendiente")
+                                        ))
+
+                                progress_bar.progress(100)
+                                status_text.text("¡Proceso completado con éxito!")
                                 st.cache_data.clear()
-                                st.success("🎉 ¡Base de datos restaurada correctamente y memoria actualizada!")
+                                st.success("🎉 ¡Base de datos restaurada correctamente!")
                                 st.rerun()
                             else:
                                 st.warning("Por favor marca la casilla de confirmación.")

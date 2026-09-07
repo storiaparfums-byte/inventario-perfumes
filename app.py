@@ -62,7 +62,6 @@ def query_turso_http(sql, params=()):
     url = st.secrets["TURSO_DATABASE_URL"]
     token = st.secrets["TURSO_AUTH_TOKEN"]
     
-    # Normalizar URL a HTTPS API de Turso
     if url.startswith("libsql://"):
         url = url.replace("libsql://", "https://")
     if not url.endswith("/v2/pipeline"):
@@ -989,7 +988,8 @@ else:
                 "➕ Agregar Perfume", 
                 "📄 Cargar PDF Proveedor",
                 "✏️ Editar / Eliminar",
-                "📜 Historial"
+                "📜 Historial",
+                "💾 Copias de Seguridad"
             ]
         )
 
@@ -2078,3 +2078,104 @@ else:
                         st.error("Clave incorrecta o casilla de confirmación no marcada.")
             else:
                 st.info("Sin movimientos en el historial.")
+
+        # --- SECCIÓN: COPIAS DE SEGURIDAD (BACKUP & RESTAURACIÓN) ---
+        elif seccion_admin == "💾 Copias de Seguridad":
+            st.header("💾 Copias de Seguridad (Backup y Restauración)")
+            st.info("💡 Descarga un archivo con toda la información guardada o restaura una copia de seguridad anterior.")
+
+            tab_bk1, tab_bk2 = st.tabs(["📥 Descargar Backup de la App", "📤 Restaurar Copia de Seguridad"])
+
+            with tab_bk1:
+                st.subheader("📥 Exportar Datos Actuales")
+                
+                # Recopilar todas las tablas en un objeto JSON
+                backup_data = {
+                    "stock": fetch_df("SELECT * FROM stock").to_dict(orient="records"),
+                    "historial": fetch_df("SELECT * FROM historial").to_dict(orient="records"),
+                    "config": fetch_df("SELECT * FROM config").to_dict(orient="records"),
+                    "clientes_seguimiento": fetch_df("SELECT * FROM clientes_seguimiento").to_dict(orient="records"),
+                    "egresos": fetch_df("SELECT * FROM egresos").to_dict(orient="records"),
+                    "ordenes_compra": fetch_df("SELECT * FROM ordenes_compra").to_dict(orient="records")
+                }
+                
+                json_bytes = json.dumps(backup_data, indent=4, ensure_ascii=False).encode('utf-8')
+                
+                st.download_button(
+                    label="⬇️ Descargar Copia de Seguridad Completa (.json)",
+                    data=json_bytes,
+                    file_name=f"Backup_Storia_Parfums_{datetime.now().strftime('%Y_%m_%d_%H%M')}.json",
+                    mime="application/json"
+                )
+
+            with tab_bk2:
+                st.subheader("📤 Cargar y Restaurar Copia de Seguridad")
+                st.warning("⚠️ **Atención:** Al restaurar una copia se actualizarán los registros con la información del archivo.")
+                
+                uploaded_backup = st.file_uploader("Selecciona el archivo de Backup (.json):", type=["json"])
+
+                if uploaded_backup is not None:
+                    try:
+                        data_restaurar = json.load(uploaded_backup)
+                        
+                        st.write("📋 **Resumen del archivo cargado:**")
+                        for t_name, rows_t in data_restaurar.items():
+                            st.write(f"- Tabla **{t_name}**: {len(rows_t)} registros.")
+
+                        confirm_restore = st.checkbox("⚠️ Confirmar restauración completa de datos", key="chk_confirm_restore")
+
+                        if st.button("🚀 Iniciar Restauración"):
+                            if confirm_restore:
+                                # Restaurar Stock
+                                if "stock" in data_restaurar:
+                                    for r in data_restaurar["stock"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("nombre"), r.get("tipo"), r.get("genero", "Unisex"), r.get("capacidad_ml", 100),
+                                            r.get("botellas_100ml_cerradas", 0), r.get("ml_disponibles_abiertos", 0), r.get("decants_10ml_preparados", 0),
+                                            r.get("costo_usd", 0.0), r.get("margen_100ml_custom"), r.get("estado"), r.get("socio_asignado", ""),
+                                            r.get("monto_senado_ars", 0.0), r.get("cliente_senado", ""), r.get("notas_olfativas", ""), r.get("imagen_url", "")
+                                        ))
+
+                                # Restaurar Historial
+                                if "historial" in data_restaurar:
+                                    for r in data_restaurar["historial"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("fecha"), r.get("perfume"), r.get("socio"), r.get("tipo_movimiento"),
+                                            r.get("monto_ingreso_ars", 0.0), r.get("id_producto", 0), r.get("presentacion", ""), r.get("cantidad", 1)
+                                        ))
+
+                                # Restaurar Egresos
+                                if "egresos" in data_restaurar:
+                                    for r in data_restaurar["egresos"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
+                                            VALUES (?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("fecha"), r.get("categoria"), r.get("descripcion"),
+                                            r.get("monto_ars", 0.0), r.get("socio_registra")
+                                        ))
+
+                                # Restaurar Clientes Seguimiento
+                                if "clientes_seguimiento" in data_restaurar:
+                                    for r in data_restaurar["clientes_seguimiento"]:
+                                        execute_query('''
+                                            INSERT OR REPLACE INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ''', (
+                                            r.get("id"), r.get("fecha_compra"), r.get("cliente_nombre"), r.get("cliente_celular"),
+                                            r.get("socio_vendedor"), r.get("perfume"), r.get("presentacion"), r.get("dias_estimados", 90),
+                                            r.get("fecha_recordatorio"), r.get("estado", "Pendiente")
+                                        ))
+
+                                st.success("🎉 ¡Base de datos restaurada correctamente desde la copia de seguridad!")
+                                st.rerun()
+                            else:
+                                st.warning("Por favor marca la casilla de confirmación.")
+                    except Exception as err_bk:
+                        st.error(f"Error procesando la copia de seguridad: {err_bk}")

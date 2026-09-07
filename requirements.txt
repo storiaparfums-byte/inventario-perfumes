@@ -1,6 +1,5 @@
-Plaintext
 streamlit
 pandas
 pypdf
 reportlab
-libsql-experimental
+libsql-experimental==0.0.34

@@ -391,6 +391,10 @@ try:
 except Exception as e:
     st.error(f"Error al conectar con la base de datos Turso: {e}")
 
+# ---------------------------------------------------------
+# CARGA CON CACHÉ PARA VELOCIDAD EXTREMA
+# ---------------------------------------------------------
+@st.cache_data(ttl=60)
 def cargar_datos_stock():
     df = fetch_df("SELECT * FROM stock")
     if not df.empty:
@@ -400,27 +404,32 @@ def cargar_datos_stock():
             df["genero"] = df["genero"].fillna("Unisex").replace("", "Unisex")
     return df
 
+@st.cache_data(ttl=60)
 def cargar_historial():
     df = fetch_df("SELECT * FROM historial ORDER BY id DESC")
     if not df.empty and "fecha" in df.columns:
         df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
+@st.cache_data(ttl=60)
 def cargar_egresos():
     df = fetch_df("SELECT * FROM egresos ORDER BY id DESC")
     if not df.empty and "fecha" in df.columns:
         df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
+@st.cache_data(ttl=60)
 def cargar_seguimiento():
     return fetch_df("SELECT * FROM clientes_seguimiento ORDER BY fecha_recordatorio ASC")
 
+@st.cache_data(ttl=60)
 def cargar_ordenes_compra():
     df = fetch_df("SELECT * FROM ordenes_compra ORDER BY id ASC")
     if not df.empty and "capacidad_ml" in df.columns:
         df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
     return df
 
+@st.cache_data(ttl=60)
 def cargar_config():
     df = fetch_df("SELECT cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars FROM config WHERE id = 1")
     if not df.empty:
@@ -434,6 +443,7 @@ def guardar_config(dolar, m100, mdec, envase):
         SET cotizacion_dolar = ?, margen_100ml = ?, margen_decant = ?, costo_envase_decant_ars = ?
         WHERE id = 1
     ''', (dolar, m100, mdec, envase))
+    st.cache_data.clear()
 
 def normalizar_texto(texto):
     if not texto:
@@ -1352,6 +1362,7 @@ else:
                                     ''', (fecha_actual.strftime("%Y-%m-%d"), cliente_venta, celular_venta, socio_vendedor_real, item['nombre'], pres, dias_u, fecha_rec))
 
                             st.session_state.items_venta = []
+                            st.cache_data.clear()
                             st.success(f"¡Venta registrada con éxito!")
                             st.rerun()
 
@@ -1400,12 +1411,14 @@ else:
                             
                             if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
                                 execute_query("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
+                                st.cache_data.clear()
                                 st.rerun()
 
                             confirm_del_seg = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_seg_{row_c['id']}")
                             if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
                                 if confirm_del_seg:
                                     execute_query("DELETE FROM clientes_seguimiento WHERE id = ?", (row_c['id'],))
+                                    st.cache_data.clear()
                                     st.success("Registro eliminado.")
                                     st.rerun()
                                 else:
@@ -1425,6 +1438,7 @@ else:
                             if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
                                 if confirm_del_prox:
                                     execute_query("DELETE FROM clientes_seguimiento WHERE id = ?", (row_p['id'],))
+                                    st.cache_data.clear()
                                     st.rerun()
                                 else:
                                     st.warning("Marca la casilla para confirmar.")
@@ -1455,6 +1469,7 @@ else:
                         f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         execute_query("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (?, ?, ?, ?, ?)",
                                       (f_hoy, cat_gasto, desc_gasto, monto_gasto, socio_gasto))
+                        st.cache_data.clear()
                         st.success("¡Gasto registrado con éxito!")
                         st.rerun()
 
@@ -1596,6 +1611,7 @@ else:
                                 INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                                 VALUES (?, ?, ?, ?, ?, ?, '', ?)
                             ''', (f_now, p_oc_sel, cap_oc, cant_oc, costo_override, est_inv, st.session_state.socio_autenticado))
+                            st.cache_data.clear()
                             st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
                             st.rerun()
 
@@ -1616,6 +1632,7 @@ else:
                             INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                             VALUES (?, ?, ?, ?, ?, 'Nuevo', '', ?)
                         ''', (f_now, nom_nuevo_oc.strip(), int(cap_nuevo_oc), cant_nuevo_oc, costo_nuevo_oc, st.session_state.socio_autenticado))
+                        st.cache_data.clear()
                         st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
                         st.rerun()
 
@@ -1647,6 +1664,7 @@ else:
                         if st.button("🗑️ Eliminar", key=f"btn_del_oc_{row_oc['id']}"):
                             if confirm_del_oc:
                                 execute_query("DELETE FROM ordenes_compra WHERE id = ?", (row_oc['id'],))
+                                st.cache_data.clear()
                                 st.rerun()
                             else:
                                 st.warning("Marca la casilla para confirmar.")
@@ -1676,6 +1694,7 @@ else:
                     if st.button("🚨 Vaciar Orden de Compra Completa"):
                         if confirm_vaciar_oc:
                             execute_query("DELETE FROM ordenes_compra")
+                            st.cache_data.clear()
                             st.success("Orden de compra vaciada.")
                             st.rerun()
                         else:
@@ -1740,6 +1759,7 @@ else:
                             ''', (nombre.strip(), tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url))
                             st.success("¡Perfume guardado!")
                             
+                        st.cache_data.clear()
                         st.rerun()
 
         # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
@@ -1795,6 +1815,7 @@ else:
                                     ''', (r['nombre'], int(r['capacidad_ml']), r['costo_usd']))
                                     cargados += 1
 
+                            st.cache_data.clear()
                             st.success(f"¡Sincronizado! {actualizados} precios/volúmenes actualizados y {cargados} perfumes nuevos agregados.")
                             st.rerun()
                 except Exception as e:
@@ -1857,6 +1878,7 @@ else:
                                 notas_olfativas = ?, imagen_url = ?
                             WHERE id = ?
                         ''', (nuevo_nombre, nuevo_tipo, nuevo_genero, int(nueva_capacidad), nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevas_notas, nueva_img, id_mod))
+                        st.cache_data.clear()
                         st.success("¡Stock y datos del perfume actualizados correctamente!")
                         st.rerun()
 
@@ -1866,6 +1888,7 @@ else:
                     if confirm_del_prod:
                         execute_query("DELETE FROM stock WHERE id = ?", (id_mod,))
                         execute_query("DELETE FROM ordenes_compra WHERE nombre = ?", (prod_data['nombre'],))
+                        st.cache_data.clear()
                         st.success("Perfume eliminado del sistema.")
                         st.rerun()
                     else:
@@ -1877,6 +1900,7 @@ else:
             if st.button("🚨 VACIAR CATALOGO COMPLETO"):
                 if clave_inv_input == CLAVE_ADMIN_MASTER and confirm_vaciar_cat:
                     execute_query("DELETE FROM stock")
+                    st.cache_data.clear()
                     st.success("Catálogo vaciado.")
                     st.rerun()
                 else:
@@ -1944,6 +1968,7 @@ else:
                                         execute_query("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock' WHERE id = ?", (ml + (cant * 10), id_p))
 
                         execute_query("DELETE FROM historial WHERE id = ?", (id_h_del,))
+                        st.cache_data.clear()
                         st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
                         st.rerun()
                     else:
@@ -1955,6 +1980,7 @@ else:
                 if st.button("🚨 VACIAR HISTORIAL COMPLETO"):
                     if clave_hist == CLAVE_ADMIN_MASTER and confirm_vaciar_hist:
                         execute_query("DELETE FROM historial")
+                        st.cache_data.clear()
                         st.warning("Historial vaciado.")
                         st.rerun()
                     else:
@@ -1962,7 +1988,7 @@ else:
             else:
                 st.info("Sin movimientos en el historial.")
 
-        # --- SECCIÓN: COPIAS DE SEGURIDAD (BACKUP & RESTAURACIÓN) ---
+        # --- SECCIÓN: COPIAS DE SEGURIDAD (BACKUP & RESTAURACIÓN CORREGIDA) ---
         elif seccion_admin == "💾 Copias de Seguridad":
             st.header("💾 Copias de Seguridad (Backup y Restauración)")
             st.info("💡 Descarga un archivo con toda la información guardada o restaura una copia de seguridad anterior.")
@@ -1992,7 +2018,7 @@ else:
 
             with tab_bk2:
                 st.subheader("📤 Cargar y Restaurar Copia de Seguridad")
-                st.warning("⚠️ **Atención:** Al restaurar una copia se actualizarán los registros con la información del archivo.")
+                st.warning("⚠️ **Atención:** Al restaurar la copia de seguridad se insertarán/actualizarán todos los registros en la base de datos.")
                 
                 uploaded_backup = st.file_uploader("Selecciona el archivo de Backup (.json):", type=["json"])
 
@@ -2008,50 +2034,80 @@ else:
 
                         if st.button("🚀 Iniciar Restauración"):
                             if confirm_restore:
-                                if "stock" in data_restaurar:
-                                    for r in data_restaurar["stock"]:
-                                        execute_query('''
-                                            INSERT OR REPLACE INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                        ''', (
-                                            r.get("id"), r.get("nombre"), r.get("tipo"), r.get("genero", "Unisex"), r.get("capacidad_ml", 100),
-                                            r.get("botellas_100ml_cerradas", 0), r.get("ml_disponibles_abiertos", 0), r.get("decants_10ml_preparados", 0),
-                                            r.get("costo_usd", 0.0), r.get("margen_100ml_custom"), r.get("estado"), r.get("socio_asignado", ""),
-                                            r.get("monto_senado_ars", 0.0), r.get("cliente_senado", ""), r.get("notas_olfativas", ""), r.get("imagen_url", "")
-                                        ))
+                                with st.spinner("Restaurando datos en Turso... Por favor aguarda unos segundos."):
+                                    # Restaurar Stock
+                                    if "stock" in data_restaurar and data_restaurar["stock"]:
+                                        for r in data_restaurar["stock"]:
+                                            execute_query('''
+                                                INSERT INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                ON CONFLICT(id) DO UPDATE SET
+                                                    nombre=excluded.nombre, tipo=excluded.tipo, genero=excluded.genero, capacidad_ml=excluded.capacidad_ml,
+                                                    botellas_100ml_cerradas=excluded.botellas_100ml_cerradas, ml_disponibles_abiertos=excluded.ml_disponibles_abiertos,
+                                                    decants_10ml_preparados=excluded.decants_10ml_preparados, costo_usd=excluded.costo_usd,
+                                                    margen_100ml_custom=excluded.margen_100ml_custom, estado=excluded.estado, socio_asignado=excluded.socio_asignado,
+                                                    monto_senado_ars=excluded.monto_senado_ars, cliente_senado=excluded.cliente_senado,
+                                                    notas_olfativas=excluded.notas_olfativas, imagen_url=excluded.imagen_url
+                                                ON CONFLICT(nombre) DO UPDATE SET
+                                                    tipo=excluded.tipo, genero=excluded.genero, capacidad_ml=excluded.capacidad_ml,
+                                                    botellas_100ml_cerradas=excluded.botellas_100ml_cerradas, ml_disponibles_abiertos=excluded.ml_disponibles_abiertos,
+                                                    decants_10ml_preparados=excluded.decants_10ml_preparados, costo_usd=excluded.costo_usd,
+                                                    margen_100ml_custom=excluded.margen_100ml_custom, estado=excluded.estado, socio_asignado=excluded.socio_asignado,
+                                                    monto_senado_ars=excluded.monto_senado_ars, cliente_senado=excluded.cliente_senado,
+                                                    notas_olfativas=excluded.notas_olfativas, imagen_url=excluded.imagen_url
+                                            ''', (
+                                                r.get("id"), r.get("nombre"), r.get("tipo", ""), r.get("genero", "Unisex"), r.get("capacidad_ml", 100),
+                                                r.get("botellas_100ml_cerradas", 0), r.get("ml_disponibles_abiertos", 0), r.get("decants_10ml_preparados", 0),
+                                                r.get("costo_usd", 0.0), r.get("margen_100ml_custom"), r.get("estado", "A pedido"), r.get("socio_asignado", ""),
+                                                r.get("monto_senado_ars", 0.0), r.get("cliente_senado", ""), r.get("notas_olfativas", ""), r.get("imagen_url", "")
+                                            ))
 
-                                if "historial" in data_restaurar:
-                                    for r in data_restaurar["historial"]:
-                                        execute_query('''
-                                            INSERT OR REPLACE INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                        ''', (
-                                            r.get("id"), r.get("fecha"), r.get("perfume"), r.get("socio"), r.get("tipo_movimiento"),
-                                            r.get("monto_ingreso_ars", 0.0), r.get("id_producto", 0), r.get("presentacion", ""), r.get("cantidad", 1)
-                                        ))
+                                    # Restaurar Historial
+                                    if "historial" in data_restaurar and data_restaurar["historial"]:
+                                        for r in data_restaurar["historial"]:
+                                            execute_query('''
+                                                INSERT INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                ON CONFLICT(id) DO UPDATE SET
+                                                    fecha=excluded.fecha, perfume=excluded.perfume, socio=excluded.socio, tipo_movimiento=excluded.tipo_movimiento,
+                                                    monto_ingreso_ars=excluded.monto_ingreso_ars, id_producto=excluded.id_producto, presentacion=excluded.presentacion, cantidad=excluded.cantidad
+                                            ''', (
+                                                r.get("id"), r.get("fecha"), r.get("perfume"), r.get("socio"), r.get("tipo_movimiento"),
+                                                r.get("monto_ingreso_ars", 0.0), r.get("id_producto", 0), r.get("presentacion", ""), r.get("cantidad", 1)
+                                            ))
 
-                                if "egresos" in data_restaurar:
-                                    for r in data_restaurar["egresos"]:
-                                        execute_query('''
-                                            INSERT OR REPLACE INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
-                                            VALUES (?, ?, ?, ?, ?, ?)
-                                        ''', (
-                                            r.get("id"), r.get("fecha"), r.get("categoria"), r.get("descripcion"),
-                                            r.get("monto_ars", 0.0), r.get("socio_registra")
-                                        ))
+                                    # Restaurar Egresos
+                                    if "egresos" in data_restaurar and data_restaurar["egresos"]:
+                                        for r in data_restaurar["egresos"]:
+                                            execute_query('''
+                                                INSERT INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
+                                                VALUES (?, ?, ?, ?, ?, ?)
+                                                ON CONFLICT(id) DO UPDATE SET
+                                                    fecha=excluded.fecha, categoria=excluded.categoria, descripcion=excluded.descripcion,
+                                                    monto_ars=excluded.monto_ars, socio_registra=excluded.socio_registra
+                                            ''', (
+                                                r.get("id"), r.get("fecha"), r.get("categoria"), r.get("descripcion"),
+                                                r.get("monto_ars", 0.0), r.get("socio_registra")
+                                            ))
 
-                                if "clientes_seguimiento" in data_restaurar:
-                                    for r in data_restaurar["clientes_seguimiento"]:
-                                        execute_query('''
-                                            INSERT OR REPLACE INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                        ''', (
-                                            r.get("id"), r.get("fecha_compra"), r.get("cliente_nombre"), r.get("cliente_celular"),
-                                            r.get("socio_vendedor"), r.get("perfume"), r.get("presentacion"), r.get("dias_estimados", 90),
-                                            r.get("fecha_recordatorio"), r.get("estado", "Pendiente")
-                                        ))
+                                    # Restaurar Clientes Seguimiento
+                                    if "clientes_seguimiento" in data_restaurar and data_restaurar["clientes_seguimiento"]:
+                                        for r in data_restaurar["clientes_seguimiento"]:
+                                            execute_query('''
+                                                INSERT INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                ON CONFLICT(id) DO UPDATE SET
+                                                    fecha_compra=excluded.fecha_compra, cliente_nombre=excluded.cliente_nombre, cliente_celular=excluded.cliente_celular,
+                                                    socio_vendedor=excluded.socio_vendedor, perfume=excluded.perfume, presentacion=excluded.presentacion,
+                                                    dias_estimados=excluded.dias_estimados, fecha_recordatorio=excluded.fecha_recordatorio, estado=excluded.estado
+                                            ''', (
+                                                r.get("id"), r.get("fecha_compra"), r.get("cliente_nombre"), r.get("cliente_celular"),
+                                                r.get("socio_vendedor"), r.get("perfume"), r.get("presentacion"), r.get("dias_estimados", 90),
+                                                r.get("fecha_recordatorio"), r.get("estado", "Pendiente")
+                                            ))
 
-                                st.success("🎉 ¡Base de datos restaurada correctamente!")
+                                st.cache_data.clear()
+                                st.success("🎉 ¡Base de datos restaurada correctamente y memoria actualizada!")
                                 st.rerun()
                             else:
                                 st.warning("Por favor marca la casilla de confirmación.")

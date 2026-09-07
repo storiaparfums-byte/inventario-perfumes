@@ -42,7 +42,7 @@ SOCIOS_WHATSAPP = {
 }
 
 SOCIOS = list(USUARIOS_SOCIOS.keys())
-ESTADOS = ["En Stock", "A pedido", "Pedido / Señado", "Agotado"]
+ESTADOS = ["En Stock", "A pedido", "Agotado"]
 GENEROS = ["Unisex", "Hombre", "Mujer"]
 
 CATEGORIAS = [
@@ -214,11 +214,6 @@ st.markdown("""
     .badge-genero {
         background-color: #2D3748;
         color: #E2E8F0;
-    }
-    .badge-senado {
-        background-color: #8B0000 !important;
-        color: #FFFFFF !important;
-        font-weight: bold;
     }
     .perfume-notes {
         color: #C5A059;
@@ -505,13 +500,12 @@ def generar_pdf_catalogo(df_cat):
         cap = limpiar_int_ml(row.get("capacidad_ml", 100), 100)
         gen = row.get("genero", "Unisex")
         tipo_str = f" ({row['tipo']})" if row.get("tipo") else ""
-        est_publico = "Reservado / A pedido" if row["estado"] == "Pedido / Señado" else row["estado"]
         
         data.append([
             Paragraph(f"{row['nombre']}{tipo_str}", cell_bold),
             Paragraph(gen, cell_style),
             Paragraph(f"{cap} ml", cell_style),
-            Paragraph(est_publico, cell_style),
+            Paragraph(row["estado"], cell_style),
             Paragraph(fmt_ars(row['precio_100ml']), cell_style),
             Paragraph(fmt_ars(row['precio_decant']), cell_style)
         ])
@@ -626,7 +620,7 @@ def generar_pdf_reporte_contable(socio_filtro, periodo_str, df_ingresos, df_egre
     story.append(t_res)
     story.append(Spacer(1, 15))
 
-    story.append(Paragraph("<b>Detalle de Ingresos (Ventas y Señas)</b>", meta_style))
+    story.append(Paragraph("<b>Detalle de Ingresos (Ventas)</b>", meta_style))
     story.append(Spacer(1, 4))
     
     headers_ing = ["Fecha", "Perfume / Detalle", "Socio", "Tipo Movimiento", "Monto"]
@@ -761,15 +755,11 @@ def generar_pdf_orden_compra(socio_emite, df_items, total_usd, total_ars, dolar_
     
     for _, row in df_items.iterrows():
         est_txt = str(row['estado_inventario'])
-        if "Señado" in est_txt or "Reserva" in est_txt or "Pedido" in est_txt:
-            est_limpio = "A Pedido"
-        else:
-            est_limpio = est_txt
 
         data.append([
             Paragraph(row["nombre"], cell_style),
             Paragraph(f"{limpiar_int_ml(row['capacidad_ml'], 100)} ml", cell_style),
-            Paragraph(est_limpio, cell_style),
+            Paragraph(est_txt, cell_style),
             Paragraph(str(row["cantidad"]), cell_style),
             Paragraph(f"${row['costo_usd']:.2f}", cell_style),
             Paragraph(f"${row['subtotal_usd']:.2f}", cell_style)
@@ -829,7 +819,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
     if not df_cat_base.empty:
         df_cat_base["estado"] = df_cat_base["estado"].replace("Disponible en Proveedor", "A pedido")
-        df_cat_base = df_cat_base[df_cat_base["estado"].isin(['En Stock', 'A pedido', 'Pedido / Señado'])]
+        df_cat_base = df_cat_base[df_cat_base["estado"].isin(['En Stock', 'A pedido'])]
         
         df_cat_base["orden"] = df_cat_base["estado"].apply(lambda x: 0 if x == "En Stock" else 1)
         df_cat_base = df_cat_base.sort_values(by=["orden", "nombre"]).drop(columns=["orden"])
@@ -924,12 +914,8 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             else:
                 stock_dec_html = '<span class="stock-badge-red"> (A pedido)</span>'
 
-            if r['estado'] == "Pedido / Señado":
-                estado_class = "perfume-badge badge-senado"
-                txt_sen = "📌 RESERVADO / A PEDIDO"
-            else:
-                estado_class = "perfume-badge"
-                txt_sen = r['estado']
+            estado_class = "perfume-badge"
+            txt_sen = r['estado']
 
             col_card_1, col_card_2 = st.columns([1, 3])
             with col_card_1:
@@ -978,7 +964,6 @@ else:
         seccion_admin = st.sidebar.radio(
             "Gestión Interna:",
             [
-                "📌 Registrar Seña / Reserva",
                 "📦 Stock & Precios", 
                 "📋 Crear Presupuesto",
                 "🛒 Registrar Venta", 
@@ -995,93 +980,8 @@ else:
 
         st.sidebar.caption(f"💵 Dólar Sistema: **{fmt_ars(dolar_hoy)}**")
 
-        # --- SECCIÓN: REGISTRAR SEÑA / RESERVA ---
-        if seccion_admin == "📌 Registrar Seña / Reserva":
-            st.header("📌 Registrar Seña o Reserva (Frascos o Decants)")
-            st.info("💡 Aparta un perfume. En el catálogo público solo aparecerá como 'RESERVADO / A PEDIDO' sin revelar el nombre del cliente ni montos.")
-
-            df_sen = cargar_datos_stock()
-
-            if not df_sen.empty:
-                p_senia_sel = st.selectbox("Perfume / Fragancia:", df_sen["nombre"].tolist())
-                p_data_sen = df_sen[df_sen["nombre"] == p_senia_sel].iloc[0]
-                cap_sen = limpiar_int_ml(p_data_sen.get("capacidad_ml", 100), 100)
-
-                with st.form("form_reg_senia", clear_on_submit=True):
-                    col_sen1, col_sen2 = st.columns(2)
-                    with col_sen1:
-                        pres_senia_sel = st.selectbox("Presentación a Apartar:", [f"Frasco Completo ({cap_sen}ml)", "Decant 10ml"])
-                        cli_senia_nom = st.text_input("Nombre del Cliente:", placeholder="Ej. Juan Pérez")
-                        socio_senia_sel = st.selectbox("Socio que toma el pedido:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
-                    
-                    with col_sen2:
-                        tipo_operacion_res = st.radio("Tipo de Operación:", ["📌 Seña (Con Pago)", "🔒 Reserva (Sin Pago)"], horizontal=True)
-                        monto_senia_val = st.number_input("Monto Entregado de Seña ($ ARS):", min_value=0.0, value=5000.0, step=1000.0) if tipo_operacion_res == "📌 Seña (Con Pago)" else 0.0
-                        agregar_a_orden = st.checkbox("📦 Agregar automáticamente a la Orden de Compra para Proveedor", value=True)
-
-                    btn_guardar_senia = st.form_submit_button("📌 Confirmar Seña / Reserva")
-
-                    if btn_guardar_senia and cli_senia_nom.strip() != "":
-                        nom_item_senia = f"{p_senia_sel} ({pres_senia_sel})"
-                        execute_query('''
-                            UPDATE stock 
-                            SET estado = 'Pedido / Señado', socio_asignado = ?, monto_senado_ars = ?, cliente_senado = ?
-                            WHERE nombre = ?
-                        ''', (socio_senia_sel, monto_senia_val, f"{cli_senia_nom.strip()} [{pres_senia_sel}]", p_senia_sel))
-                        
-                        if monto_senia_val > 0:
-                            f_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            execute_query('''
-                                INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (f_actual, nom_item_senia, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", monto_senia_val, int(p_data_sen['id']), pres_senia_sel, 1))
-
-                        if agregar_a_orden:
-                            f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            det_res = f"RESERVA/SEÑA: {cli_senia_nom.strip()} [{pres_senia_sel}]"
-                            costo_u = float(p_data_sen.get("costo_usd", 0.0))
-                            execute_query('''
-                                INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
-                                VALUES (?, ?, ?, 1, ?, 'A pedido / Señado', ?, ?)
-                            ''', (f_now, p_senia_sel, cap_sen, costo_u, det_res, socio_senia_sel))
-
-                        st.success(f"¡El producto quedó registrado como SEÑADO/RESERVADO con éxito!")
-                        st.rerun()
-
-                st.markdown("---")
-                st.subheader("📋 Productos Actualmente Señados o Reservados (Vista Interna)")
-                df_senados_list = df_sen[df_sen["estado"] == "Pedido / Señado"]
-
-                if not df_senados_list.empty:
-                    for _, row_sen in df_senados_list.iterrows():
-                        col_s_card1, col_s_card2 = st.columns([3, 1])
-                        m_entregado = float(row_sen.get('monto_senado_ars', 0))
-                        badge_tipo = "📌 SEÑADO" if m_entregado > 0 else "🔒 RESERVADO (SIN PAGO)"
-                        monto_txt = fmt_ars(m_entregado) if m_entregado > 0 else "$0 ARS (Sin Seña)"
-                        
-                        with col_s_card1:
-                            st.markdown(f"""
-                            <div style="background-color: #291D1A; border-left: 4px solid #8B0000; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
-                                <div style="font-size: 1.1rem; font-weight: bold; color: #FFFFFF;">{row_sen['nombre']} <span style="font-size:0.8rem; color:#D4AF37;">[{badge_tipo}]</span></div>
-                                <div>👤 <b>Cliente:</b> {row_sen.get('cliente_senado', 'Cliente')} | 📌 <b>Socio:</b> {row_sen.get('socio_asignado', 'Socio')}</div>
-                                <div>💵 <b>Monto Entregado:</b> <span style="color:#E5C158; font-weight:bold;">{monto_txt}</span></div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        with col_s_card2:
-                            chk_liberar = st.checkbox("⚠️ ¿Confirmar liberación?", key=f"chk_unmark_{row_sen['id']}")
-                            if st.button(f"🔓 Liberar Producto", key=f"btn_unmark_{row_sen['id']}"):
-                                if chk_liberar:
-                                    execute_query("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
-                                    execute_query("DELETE FROM ordenes_compra WHERE nombre = ? AND estado_inventario LIKE '%Señado%'", (row_sen['nombre'],))
-                                    st.success("Reserva/Seña liberada y removida de la Orden de Compra.")
-                                    st.rerun()
-                                else:
-                                    st.warning("Marca la casilla para confirmar.")
-                else:
-                    st.caption("No hay productos señados ni reservados en este momento.")
-
         # --- SECCIÓN: STOCK Y PRECIOS ---
-        elif seccion_admin == "📦 Stock & Precios":
+        if seccion_admin == "📦 Stock & Precios":
             st.header("📦 Inventario Global")
             
             col_p1, col_p2 = st.columns(2)
@@ -1140,30 +1040,20 @@ else:
                         p_100_card = fmt_ars(r['precio_venta_100ml_ars'])
                         p_dec_card = fmt_ars(r['precio_venta_decant_10ml_ars'])
                         cap = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
-                        
-                        socio_reserva_html = ""
-                        if r['estado'] == "Pedido / Señado":
-                            m_sen = float(r.get('monto_senado_ars', 0))
-                            cli_sen = r.get('cliente_senado', 'Cliente')
-                            socio_reserva_html = f'<div style="color: #FF6B6B; font-weight: bold; margin-top: 4px; font-size: 0.85rem;">📌 SEÑADO/RESERVADO POR: {cli_sen} (Socio: {r.get("socio_asignado", "-")}) - {fmt_ars(m_sen)}</div>'
 
-                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{gen_str}{socio_reserva_html}{notas_str}<div style="margin-top: 8px;"><div><b>Frasco ({cap}ml):</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decants 10ml Listos:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un en stock)</small></div><div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
+                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{gen_str}{notas_str}<div style="margin-top: 8px;"><div><b>Frasco ({cap}ml):</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decants 10ml Listos:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un en stock)</small></div><div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
                         st.markdown(card_admin_html, unsafe_allow_html=True)
                 else:
                     df_display = df.copy()
                     df_display["precio_100ml_formatted"] = df_display["precio_venta_100ml_ars"].apply(fmt_ars)
                     df_display["precio_10ml_formatted"] = df_display["precio_venta_decant_10ml_ars"].apply(fmt_ars)
-                    df_display["Reserva_Socio"] = df_display.apply(
-                        lambda row: f"{row['cliente_senado']} ({fmt_ars(row['monto_senado_ars'])})" if row['estado'] == "Pedido / Señado" else "-", axis=1
-                    )
                     
                     df_display = df_display.rename(columns={
                         "id": "ID", "nombre": "Perfume", "genero": "Género", "tipo": "Marca / Categoría", "capacidad_ml": "Vol (ml)", "estado": "Estado",
                         "botellas_100ml_cerradas": "Frascos", "decants_10ml_preparados": "Decants Stock", "costo_usd": "USD",
-                        "precio_100ml_formatted": "Precio Frasco", "precio_10ml_formatted": "Precio 10ml",
-                        "Reserva_Socio": "Señado/Reservado Por"
+                        "precio_100ml_formatted": "Precio Frasco", "precio_10ml_formatted": "Precio 10ml"
                     })
-                    st.dataframe(df_display[["ID", "Perfume", "Género", "Marca / Categoría", "Vol (ml)", "Estado", "Señado/Reservado Por", "Frascos", "Decants Stock", "Precio Frasco", "Precio 10ml"]], use_container_width=True)
+                    st.dataframe(df_display[["ID", "Perfume", "Género", "Marca / Categoría", "Vol (ml)", "Estado", "Frascos", "Decants Stock", "Precio Frasco", "Precio 10ml"]], use_container_width=True)
             else:
                 st.info("No hay perfumes registrados.")
 
@@ -1633,7 +1523,7 @@ else:
             st.markdown("---")
             col_m1, col_m2, col_m3, col_m4 = st.columns(4)
             with col_m1:
-                st.metric("🟢 Ingresos (Ventas y Señas)", fmt_ars(total_ingresos))
+                st.metric("🟢 Ingresos (Ventas)", fmt_ars(total_ingresos))
             with col_m2:
                 st.metric("🔴 Egresos (Gastos)", fmt_ars(total_egresos))
             with col_m3:
@@ -1693,13 +1583,7 @@ else:
                         col_oc1, col_oc2 = st.columns([2, 1])
                         with col_oc1:
                             est_inv = p_data_oc.get("estado", "En Stock")
-                            det_reserva = ""
-                            if est_inv == "Pedido / Señado":
-                                cli_s = p_data_oc.get("cliente_senado", "")
-                                det_reserva = f"RESERVA/SEÑA: {cli_s}"
-                                st.caption(f"📌 **Estado Actual:** {est_inv} - {det_reserva}")
-                            else:
-                                st.caption(f"📌 **Estado Actual:** {est_inv}")
+                            st.caption(f"📌 **Estado Actual:** {est_inv}")
                                 
                         with col_oc2:
                             cant_oc = st.number_input("Cantidad a pedir:", min_value=1, value=1, step=1)
@@ -1710,8 +1594,8 @@ else:
                             f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             execute_query('''
                                 INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (f_now, p_oc_sel, cap_oc, cant_oc, costo_override, est_inv, det_reserva, st.session_state.socio_autenticado))
+                                VALUES (?, ?, ?, ?, ?, ?, '', ?)
+                            ''', (f_now, p_oc_sel, cap_oc, cant_oc, costo_override, est_inv, st.session_state.socio_autenticado))
                             st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
                             st.rerun()
 
@@ -1752,10 +1636,9 @@ else:
                     cap_ml_clean = limpiar_int_ml(row_oc['capacidad_ml'], 100)
                     with col_oc_i1:
                         est_badge = f"<b>[{row_oc['estado_inventario']}]</b>"
-                        det_res = f" - <span style='color:#FF6B6B;'>{row_oc['detalle_reserva']}</span>" if row_oc['detalle_reserva'] else ""
                         st.markdown(f"""
                         <div style="background-color: #291D1A; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #D4AF37;">
-                            <b>{row_oc['nombre']}</b> ({cap_ml_clean}ml) x {row_oc['cantidad']} un | {est_badge}{det_res}<br>
+                            <b>{row_oc['nombre']}</b> ({cap_ml_clean}ml) x {row_oc['cantidad']} un | {est_badge}<br>
                             <small>Costo USD: <b>${row_oc['costo_usd']:.2f}</b> | Subtotal USD: <b>${row_oc['subtotal_usd']:.2f}</b> | Costo ARS Prov: <b>{fmt_ars(row_oc['costo_ars_prov'])}</b> | PVP Sugerido: <b>{fmt_ars(row_oc['precio_sugerido_ars'])}</b> | Creado por: {row_oc['socio_agrega']}</small>
                         </div>
                         """, unsafe_allow_html=True)
@@ -2089,7 +1972,6 @@ else:
             with tab_bk1:
                 st.subheader("📥 Exportar Datos Actuales")
                 
-                # Recopilar todas las tablas en un objeto JSON
                 backup_data = {
                     "stock": fetch_df("SELECT * FROM stock").to_dict(orient="records"),
                     "historial": fetch_df("SELECT * FROM historial").to_dict(orient="records"),
@@ -2126,7 +2008,6 @@ else:
 
                         if st.button("🚀 Iniciar Restauración"):
                             if confirm_restore:
-                                # Restaurar Stock
                                 if "stock" in data_restaurar:
                                     for r in data_restaurar["stock"]:
                                         execute_query('''
@@ -2139,7 +2020,6 @@ else:
                                             r.get("monto_senado_ars", 0.0), r.get("cliente_senado", ""), r.get("notas_olfativas", ""), r.get("imagen_url", "")
                                         ))
 
-                                # Restaurar Historial
                                 if "historial" in data_restaurar:
                                     for r in data_restaurar["historial"]:
                                         execute_query('''
@@ -2150,7 +2030,6 @@ else:
                                             r.get("monto_ingreso_ars", 0.0), r.get("id_producto", 0), r.get("presentacion", ""), r.get("cantidad", 1)
                                         ))
 
-                                # Restaurar Egresos
                                 if "egresos" in data_restaurar:
                                     for r in data_restaurar["egresos"]:
                                         execute_query('''
@@ -2161,7 +2040,6 @@ else:
                                             r.get("monto_ars", 0.0), r.get("socio_registra")
                                         ))
 
-                                # Restaurar Clientes Seguimiento
                                 if "clientes_seguimiento" in data_restaurar:
                                     for r in data_restaurar["clientes_seguimiento"]:
                                         execute_query('''
@@ -2173,7 +2051,7 @@ else:
                                             r.get("fecha_recordatorio"), r.get("estado", "Pendiente")
                                         ))
 
-                                st.success("🎉 ¡Base de datos restaurada correctamente desde la copia de seguridad!")
+                                st.success("🎉 ¡Base de datos restaurada correctamente!")
                                 st.rerun()
                             else:
                                 st.warning("Por favor marca la casilla de confirmación.")

@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 from datetime import datetime, timedelta
 import pypdf
 import re
 import io
 import urllib.parse
 import math
+import libsql_experimental as libsql
 
 # Librerías para generación de PDF profesional
 from reportlab.lib.pagesizes import letter
@@ -56,6 +56,33 @@ CATEGORIAS = [
 CLAVE_ADMIN_MASTER = "1234"
 
 # ---------------------------------------------------------
+# CONEXIÓN A BASE DE DATOS EN LA NUBE (TURSO / LIBSQL)
+# ---------------------------------------------------------
+def get_db():
+    url = st.secrets["TURSO_DATABASE_URL"]
+    token = st.secrets["TURSO_AUTH_TOKEN"]
+    conn = libsql.connect("storia_remote.db", sync_url=url, auth_token=token)
+    conn.sync()
+    return conn
+
+def execute_query(query, params=()):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(query, params)
+    conn.commit()
+    conn.sync()
+    conn.close()
+
+def fetch_df(query, params=()):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(query, params)
+    rows = c.fetchall()
+    cols = [description[0] for description in c.description] if c.description else []
+    conn.close()
+    return pd.DataFrame(rows, columns=cols)
+
+# ---------------------------------------------------------
 # FUNCIONES AUXILIARES DE MONEDA, FORMATO Y TELEFONÍA
 # ---------------------------------------------------------
 def redondear_monto(monto, base=100):
@@ -72,7 +99,6 @@ def fmt_ars(monto):
         return "$0 ARS"
 
 def limpiar_int_ml(val, defecto=100):
-    """Sanitiza campos enteros evitando artefactos binarios de SQLite"""
     try:
         if isinstance(val, bytes):
             val = val.decode('utf-8', errors='ignore')
@@ -82,39 +108,27 @@ def limpiar_int_ml(val, defecto=100):
         return defecto
 
 def formatear_celular_wa(numero_str):
-    """
-    Normaliza números de Argentina (Mendoza ej. 2611234567, 0261151234567)
-    a formato internacional compatible con api.whatsapp.me (5492611234567).
-    """
     if not numero_str:
         return ""
-    
     num = re.sub(r'[^\d]', '', str(numero_str))
-    
     if not num:
         return ""
-    
     if num.startswith("549"):
         return num
-    
     if num.startswith("54") and not num.startswith("549"):
         num = num[2:]
-        
     if num.startswith("0"):
         num = num[1:]
-        
     if num.startswith("26115"):
         num = "261" + num[5:]
     elif num.startswith("15"):
         num = num[2:]
-
     if not num.startswith("549"):
         num = "549" + num
-        
     return num
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS (STORIA PARFUMS)
+# ESTILOS CSS PERSONALIZADOS
 # ---------------------------------------------------------
 st.markdown("""
     <style>
@@ -249,10 +263,10 @@ COLOR_BG_PDF = colors.HexColor("#1C1412")
 COLOR_GOLD_PDF = colors.HexColor("#D4AF37")
 
 # ---------------------------------------------------------
-# Base de datos SQLite Local
+# INICIALIZACIÓN DE TABLAS EN TURSO
 # ---------------------------------------------------------
 def init_db():
-    conn = sqlite3.connect('inventario.db')
+    conn = get_db()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS stock (
@@ -274,31 +288,6 @@ def init_db():
             imagen_url TEXT
         )
     ''')
-    
-    try:
-        c.execute("ALTER TABLE stock ADD COLUMN genero TEXT DEFAULT 'Unisex'")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE stock ADD COLUMN capacidad_ml INTEGER DEFAULT 100")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE stock ADD COLUMN monto_senado_ars REAL DEFAULT 0.0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE stock ADD COLUMN cliente_senado TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE stock ADD COLUMN notas_olfativas TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE stock ADD COLUMN imagen_url TEXT")
-    except sqlite3.OperationalError:
-        pass
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS historial (
@@ -369,14 +358,16 @@ def init_db():
     ''')
 
     conn.commit()
+    conn.sync()
     conn.close()
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    st.error(f"Error al conectar con la base de datos Turso: {e}")
 
 def cargar_datos_stock():
-    conn = sqlite3.connect('inventario.db')
-    df = pd.read_sql_query("SELECT * FROM stock", conn)
-    conn.close()
+    df = fetch_df("SELECT * FROM stock")
     if not df.empty:
         if "capacidad_ml" in df.columns:
             df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
@@ -385,53 +376,39 @@ def cargar_datos_stock():
     return df
 
 def cargar_historial():
-    conn = sqlite3.connect('inventario.db')
-    df = pd.read_sql_query("SELECT * FROM historial ORDER BY id DESC", conn)
-    conn.close()
+    df = fetch_df("SELECT * FROM historial ORDER BY id DESC")
     if not df.empty and "fecha" in df.columns:
         df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
 def cargar_egresos():
-    conn = sqlite3.connect('inventario.db')
-    df = pd.read_sql_query("SELECT * FROM egresos ORDER BY id DESC", conn)
-    conn.close()
+    df = fetch_df("SELECT * FROM egresos ORDER BY id DESC")
     if not df.empty and "fecha" in df.columns:
         df["fecha_dt"] = pd.to_datetime(df["fecha"], errors='coerce')
     return df
 
 def cargar_seguimiento():
-    conn = sqlite3.connect('inventario.db')
-    df = pd.read_sql_query("SELECT * FROM clientes_seguimiento ORDER BY fecha_recordatorio ASC", conn)
-    conn.close()
-    return df
+    return fetch_df("SELECT * FROM clientes_seguimiento ORDER BY fecha_recordatorio ASC")
 
 def cargar_ordenes_compra():
-    conn = sqlite3.connect('inventario.db')
-    df = pd.read_sql_query("SELECT * FROM ordenes_compra ORDER BY id ASC", conn)
-    conn.close()
+    df = fetch_df("SELECT * FROM ordenes_compra ORDER BY id ASC")
     if not df.empty and "capacidad_ml" in df.columns:
         df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
     return df
 
 def cargar_config():
-    conn = sqlite3.connect('inventario.db')
-    c = conn.cursor()
-    c.execute("SELECT cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars FROM config WHERE id = 1")
-    res = c.fetchone()
-    conn.close()
-    return res if res else (1200.0, 30.0, 100.0, 800.0)
+    df = fetch_df("SELECT cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars FROM config WHERE id = 1")
+    if not df.empty:
+        r = df.iloc[0]
+        return float(r["cotizacion_dolar"]), float(r["margen_100ml"]), float(r["margen_decant"]), float(r["costo_envase_decant_ars"])
+    return 1200.0, 30.0, 100.0, 800.0
 
 def guardar_config(dolar, m100, mdec, envase):
-    conn = sqlite3.connect('inventario.db')
-    c = conn.cursor()
-    c.execute('''
+    execute_query('''
         UPDATE config 
         SET cotizacion_dolar = ?, margen_100ml = ?, margen_decant = ?, costo_envase_decant_ars = ?
         WHERE id = 1
     ''', (dolar, m100, mdec, envase))
-    conn.commit()
-    conn.close()
 
 def normalizar_texto(texto):
     if not texto:
@@ -472,7 +449,7 @@ def extraer_perfume_y_precio(linea):
     return None, None, 100
 
 # ---------------------------------------------------------
-# GENERACIÓN DE PDFS ROBUSTOS Y SIN SUPERPOSICIÓN DE TEXTO
+# GENERACIÓN DE PDFS ROBUSTOS
 # ---------------------------------------------------------
 def generar_pdf_catalogo(df_cat):
     buffer = io.BytesIO()
@@ -604,7 +581,6 @@ def generar_pdf_reporte_contable(socio_filtro, periodo_str, df_ingresos, df_egre
     story.append(Paragraph(f"<b>Fecha de Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta_style))
     story.append(Spacer(1, 12))
 
-    # Resumen Financiero
     resumen_data = [
         [Paragraph("🟢 Total Ingresos", header_style), Paragraph("🔴 Total Gastos/Egresos", header_style), Paragraph("🏆 Ganancia Neta", header_style)],
         [Paragraph(fmt_ars(tot_ing), cell_style), Paragraph(fmt_ars(tot_eg), cell_style), Paragraph(fmt_ars(gan_neta), cell_style)]
@@ -620,7 +596,6 @@ def generar_pdf_reporte_contable(socio_filtro, periodo_str, df_ingresos, df_egre
     story.append(t_res)
     story.append(Spacer(1, 15))
 
-    # Tabla de Ingresos
     story.append(Paragraph("<b>Detalle de Ingresos (Ventas y Señas)</b>", meta_style))
     story.append(Spacer(1, 4))
     
@@ -649,7 +624,6 @@ def generar_pdf_reporte_contable(socio_filtro, periodo_str, df_ingresos, df_egre
     story.append(t_ing)
     story.append(Spacer(1, 15))
 
-    # Tabla de Egresos
     story.append(Paragraph("<b>Detalle de Gastos y Egresos</b>", meta_style))
     story.append(Spacer(1, 4))
     
@@ -752,22 +726,26 @@ def generar_pdf_orden_compra(socio_emite, df_items, total_usd, total_ars, dolar_
     story.append(Paragraph(f"<b>Cotización Dólar Proveedor Aplicada:</b> {fmt_ars(dolar_prov)}", meta_style))
     story.append(Spacer(1, 15))
     
-    headers = ["Perfume / Producto", "Estado / Reserva", "Cant.", "Costo USD", "Subtotal USD"]
+    headers = ["Perfume / Producto", "Vol (ml)", "Estado / Prioridad", "Cant.", "Costo USD", "Subtotal USD"]
     data = [[Paragraph(h, header_style) for h in headers]]
     
     for _, row in df_items.iterrows():
-        est_txt = row['estado_inventario']
-        if row.get('detalle_reserva'):
-            est_txt += f" ({row['detalle_reserva']})"
+        est_txt = str(row['estado_inventario'])
+        if "Señado" in est_txt or "Reserva" in est_txt or "Pedido" in est_txt:
+            est_limpio = "A Pedido"
+        else:
+            est_limpio = est_txt
+
         data.append([
             Paragraph(row["nombre"], cell_style),
-            Paragraph(est_txt, cell_style),
+            Paragraph(f"{limpiar_int_ml(row['capacidad_ml'], 100)} ml", cell_style),
+            Paragraph(est_limpio, cell_style),
             Paragraph(str(row["cantidad"]), cell_style),
             Paragraph(f"${row['costo_usd']:.2f}", cell_style),
             Paragraph(f"${row['subtotal_usd']:.2f}", cell_style)
         ])
         
-    t = Table(data, colWidths=[200, 110, 40, 90, 100])
+    t = Table(data, colWidths=[190, 50, 110, 40, 70, 80])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), COLOR_BG_PDF),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
@@ -806,14 +784,13 @@ st.markdown("---")
 
 dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = cargar_config()
 
-# Selección Inicial de Modo de Uso
 modo_acceso = st.sidebar.radio(
     "Acceso al Sistema:",
     ["📖 Catálogo Clientes (Libre)", "🔐 Panel Administrador (Socios)"]
 )
 
 # ---------------------------------------------------------
-# MODO 1: CATÁLOGO PÚBLICO CLIENTE (ACCESO LIBRE - SOLO CONSULTA)
+# MODO 1: CATÁLOGO PÚBLICO CLIENTE (ACCESO LIBRE)
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     st.header("📖 Catálogo de Fragancias")
@@ -846,7 +823,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base["precio_decant_raw"] = (df_cat_base["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
         df_cat_base["precio_decant"] = df_cat_base["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
-        # --- SELECCIÓN INTERACTIVA DE CONSULTA POR PERFUMES ---
         st.subheader("💡 ¿Te interesa alguna fragancia?")
         st.markdown("<small>Selecciona los perfumes sobre los que quieres consultar y luego presiona el botón del socio con quien desees hablar:</small>", unsafe_allow_html=True)
         
@@ -911,7 +887,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             p_decant_str = fmt_ars(r['precio_decant'])
             cap_ml = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
             cnt_decants = r.get("decants_10ml_preparados", 0)
-            cnt_frascos = r.get("botellas_100ml_cerradas", 0)
             cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
 
             if cnt_decants > 0 or cnt_ml_ab >= 10:
@@ -942,7 +917,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         st.info("No hay fragancias disponibles en el catálogo.")
 
 # ---------------------------------------------------------
-# MODO 2: PANEL DE ADMINISTRADOR (RESTRINGIDO CON CONTRASEÑA)
+# MODO 2: PANEL DE ADMINISTRADOR (RESTRINGIDO)
 # ---------------------------------------------------------
 else:
     st.sidebar.markdown("---")
@@ -983,8 +958,7 @@ else:
                 "➕ Agregar Perfume", 
                 "📄 Cargar PDF Proveedor",
                 "✏️ Editar / Eliminar",
-                "📜 Historial",
-                "💾 Copia de Seguridad"
+                "📜 Historial"
             ]
         )
 
@@ -1010,29 +984,15 @@ else:
                         socio_senia_sel = st.selectbox("Socio que toma el pedido:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
                     
                     with col_sen2:
-                        tipo_operacion_res = st.radio(
-                            "Tipo de Operación:",
-                            ["📌 Seña (Con Pago)", "🔒 Reserva (Sin Pago)"],
-                            horizontal=True
-                        )
-                        
-                        if tipo_operacion_res == "📌 Seña (Con Pago)":
-                            monto_senia_val = st.number_input("Monto Entregado de Seña ($ ARS):", min_value=0.0, value=5000.0, step=1000.0)
-                        else:
-                            monto_senia_val = 0.0
-                            st.caption("ℹ️ La reserva sin pago no genera movimientos en la contabilidad.")
-
+                        tipo_operacion_res = st.radio("Tipo de Operación:", ["📌 Seña (Con Pago)", "🔒 Reserva (Sin Pago)"], horizontal=True)
+                        monto_senia_val = st.number_input("Monto Entregado de Seña ($ ARS):", min_value=0.0, value=5000.0, step=1000.0) if tipo_operacion_res == "📌 Seña (Con Pago)" else 0.0
                         agregar_a_orden = st.checkbox("📦 Agregar automáticamente a la Orden de Compra para Proveedor", value=True)
 
                     btn_guardar_senia = st.form_submit_button("📌 Confirmar Seña / Reserva")
 
                     if btn_guardar_senia and cli_senia_nom.strip() != "":
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
-                        
                         nom_item_senia = f"{p_senia_sel} ({pres_senia_sel})"
-                        
-                        c.execute('''
+                        execute_query('''
                             UPDATE stock 
                             SET estado = 'Pedido / Señado', socio_asignado = ?, monto_senado_ars = ?, cliente_senado = ?
                             WHERE nombre = ?
@@ -1040,33 +1000,20 @@ else:
                         
                         if monto_senia_val > 0:
                             f_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            c.execute('''
+                            execute_query('''
                                 INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (
-                                f_actual, 
-                                nom_item_senia, 
-                                socio_senia_sel, 
-                                f"📌 SEÑA recibida de {cli_senia_nom.strip()}", 
-                                monto_senia_val, 
-                                int(p_data_sen['id']), 
-                                pres_senia_sel, 
-                                1
-                            ))
+                            ''', (f_actual, nom_item_senia, socio_senia_sel, f"📌 SEÑA recibida de {cli_senia_nom.strip()}", monto_senia_val, int(p_data_sen['id']), pres_senia_sel, 1))
 
                         if agregar_a_orden:
                             f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             det_res = f"RESERVA/SEÑA: {cli_senia_nom.strip()} [{pres_senia_sel}]"
                             costo_u = float(p_data_sen.get("costo_usd", 0.0))
-                            
-                            c.execute('''
+                            execute_query('''
                                 INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                                 VALUES (?, ?, ?, 1, ?, 'A pedido / Señado', ?, ?)
                             ''', (f_now, p_senia_sel, cap_sen, costo_u, det_res, socio_senia_sel))
 
-                        conn.commit()
-                        conn.close()
-                        
                         st.success(f"¡El producto quedó registrado como SEÑADO/RESERVADO con éxito!")
                         st.rerun()
 
@@ -1078,7 +1025,6 @@ else:
                     for _, row_sen in df_senados_list.iterrows():
                         col_s_card1, col_s_card2 = st.columns([3, 1])
                         m_entregado = float(row_sen.get('monto_senado_ars', 0))
-                        
                         badge_tipo = "📌 SEÑADO" if m_entregado > 0 else "🔒 RESERVADO (SIN PAGO)"
                         monto_txt = fmt_ars(m_entregado) if m_entregado > 0 else "$0 ARS (Sin Seña)"
                         
@@ -1094,12 +1040,8 @@ else:
                             chk_liberar = st.checkbox("⚠️ ¿Confirmar liberación?", key=f"chk_unmark_{row_sen['id']}")
                             if st.button(f"🔓 Liberar Producto", key=f"btn_unmark_{row_sen['id']}"):
                                 if chk_liberar:
-                                    conn = sqlite3.connect('inventario.db')
-                                    c = conn.cursor()
-                                    c.execute("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
-                                    c.execute("DELETE FROM ordenes_compra WHERE nombre = ? AND estado_inventario LIKE '%Señado%'", (row_sen['nombre'],))
-                                    conn.commit()
-                                    conn.close()
+                                    execute_query("UPDATE stock SET estado = 'En Stock', socio_asignado = '', monto_senado_ars = 0, cliente_senado = '' WHERE id = ?", (row_sen['id'],))
+                                    execute_query("DELETE FROM ordenes_compra WHERE nombre = ? AND estado_inventario LIKE '%Señado%'", (row_sen['nombre'],))
                                     st.success("Reserva/Seña liberada y removida de la Orden de Compra.")
                                     st.rerun()
                                 else:
@@ -1204,11 +1146,7 @@ else:
             with col_pr2:
                 celular_cliente = st.text_input("Celular del Cliente (Ej: 2611234567):", placeholder="Ej: 2611234567")
             with col_pr3:
-                socio_presupuesto = st.selectbox(
-                    "👤 Socio Vendedor (Obligatorio):", 
-                    options=SOCIOS, 
-                    index=SOCIOS.index(st.session_state.socio_autenticado)
-                )
+                socio_presupuesto = st.selectbox("👤 Socio Vendedor (Obligatorio):", options=SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
 
             df_p = cargar_datos_stock()
             
@@ -1277,12 +1215,7 @@ else:
                     st.markdown("---")
                     st.subheader("🎁 Descuento General sobre la Compra")
                     
-                    tipo_descuento = st.radio(
-                        "Tipo de Descuento General a aplicar:",
-                        ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento en Lista (%)", "Porcentaje Personalizado (%)"],
-                        horizontal=True
-                    )
-                    
+                    tipo_descuento = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento en Lista (%)", "Porcentaje Personalizado (%)"], horizontal=True)
                     monto_desc_pres = 0.0
                     
                     if tipo_descuento == "Descuento en Lista (%)":
@@ -1334,11 +1267,7 @@ else:
             with col_vcli2:
                 celular_venta = st.text_input("Número de Celular del Cliente (Ej: 2611234567):", placeholder="Ej: 2611234567")
             with col_vcli3:
-                socio_vendedor_real = st.selectbox(
-                    "👤 Socio Vendedor que realizó la venta (Obligatorio):", 
-                    options=SOCIOS, 
-                    index=SOCIOS.index(st.session_state.socio_autenticado)
-                )
+                socio_vendedor_real = st.selectbox("👤 Socio Vendedor:", options=SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
 
             df_actual = cargar_datos_stock()
 
@@ -1371,8 +1300,8 @@ else:
                         pres_sel_v = st.selectbox("Presentación:", [f"Frasco Cerrado ({cap_v}ml)", "Decant 10ml (Listo)", "Descontar 10ml de frasco abierto"])
                     with col_vi2:
                         cant_sel_v = st.number_input("Cantidad unidades:", min_value=1, value=1, step=1)
-                        desc_ind_v = st.number_input("Descuento Individual a este producto ($ ARS):", min_value=0.0, value=0.0, step=500.0)
-                        dias_estimados_uso = st.selectbox("⏱️ Tiempo estimado de uso para recordatorio:", [1, 30, 60, 90, 120, 180], index=3)
+                        desc_ind_v = st.number_input("Descuento Individual ($ ARS):", min_value=0.0, value=0.0, step=500.0)
+                        dias_estimados_uso = st.selectbox("⏱️ Tiempo estimado de uso:", [1, 30, 60, 90, 120, 180], index=3)
                         
                     add_vitem = st.form_submit_button("➕ Agregar a la Venta")
 
@@ -1416,11 +1345,7 @@ else:
                     subtotal_v = sum(i["subtotal"] for i in st.session_state.items_venta)
 
                     st.subheader("🎁 Descuento General sobre Total de Venta")
-                    tipo_desc_v = st.radio(
-                        "Tipo de Descuento General:",
-                        ["Sin Descuento Extra", "Monto Fijo en Pesos ($ ARS)", "Porcentaje Personalizado (%)"],
-                        horizontal=True
-                    )
+                    tipo_desc_v = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo en Pesos ($ ARS)", "Porcentaje Personalizado (%)"], horizontal=True)
                     
                     monto_desc_v = 0.0
                     if tipo_desc_v == "Monto Fijo en Pesos ($ ARS)":
@@ -1444,35 +1369,28 @@ else:
                     
                     with col_vbtn1:
                         if st.button("🚀 Confirmar Venta, Descontar Stock & Registrar Ingreso"):
-                            conn = sqlite3.connect('inventario.db')
-                            c = conn.cursor()
                             fecha_actual = datetime.now()
                             fecha_actual_str = fecha_actual.strftime("%Y-%m-%d %H:%M:%S")
-
                             factor_descuento = (total_v / subtotal_v) if subtotal_v > 0 else 1.0
 
                             for item in st.session_state.items_venta:
                                 id_p = item["id_producto"]
-                                cap_prod = item.get("capacidad_ml", 100)
-                                c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = ?", (id_p,))
-                                row_stock = c.fetchone()
+                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = ?", (id_p,))
                                 
-                                if row_stock:
-                                    botellas, ml, decants, cap_tot = row_stock
-                                    cap_tot = limpiar_int_ml(cap_tot, 100)
+                                if not df_stock_p.empty:
+                                    r_p = df_stock_p.iloc[0]
+                                    botellas = int(r_p["botellas_100ml_cerradas"])
+                                    ml = int(r_p["ml_disponibles_abiertos"])
+                                    decants = int(r_p["decants_10ml_preparados"])
+                                    cap_tot = limpiar_int_ml(r_p["capacidad_ml"], 100)
                                     cant = item["cantidad"]
                                     pres = item["presentacion"]
-
                                     monto_cobrado_real_item = redondear_monto(item['subtotal'] * factor_descuento, 100)
 
                                     if "Frasco" in pres:
                                         nuevas_botellas = max(0, botellas - cant)
-                                        if nuevas_botellas > 0 or decants > 0 or ml >= 10:
-                                            nuevo_est = "En Stock"
-                                        else:
-                                            nuevo_est = "A pedido"
-                                            
-                                        c.execute('''
+                                        nuevo_est = "En Stock" if (nuevas_botellas > 0 or decants > 0 or ml >= 10) else "A pedido"
+                                        execute_query('''
                                             UPDATE stock 
                                             SET botellas_100ml_cerradas = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
                                             WHERE id = ?
@@ -1480,12 +1398,8 @@ else:
 
                                     elif "Listo" in pres:
                                         nuevos_decants = max(0, decants - cant)
-                                        if nuevos_decants > 0 or botellas > 0 or ml >= 10:
-                                            nuevo_est = "En Stock"
-                                        else:
-                                            nuevo_est = "A pedido"
-                                            
-                                        c.execute('''
+                                        nuevo_est = "En Stock" if (nuevos_decants > 0 or botellas > 0 or ml >= 10) else "A pedido"
+                                        execute_query('''
                                             UPDATE stock 
                                             SET decants_10ml_preparados = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
                                             WHERE id = ?
@@ -1495,33 +1409,27 @@ else:
                                         ml_necesarios = cant * 10
                                         if ml >= ml_necesarios:
                                             nuevos_ml = ml - ml_necesarios
-                                            if nuevos_ml >= 10 or botellas > 0 or decants > 0:
-                                                nuevo_est = "En Stock"
-                                            else:
-                                                nuevo_est = "A pedido"
-                                            c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (nuevos_ml, nuevo_est, id_p))
+                                            nuevo_est = "En Stock" if (nuevos_ml >= 10 or botellas > 0 or decants > 0) else "A pedido"
+                                            execute_query("UPDATE stock SET ml_disponibles_abiertos = ?, estado = ?, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = ?", (nuevos_ml, nuevo_est, id_p))
                                         elif botellas > 0:
                                             nuevas_bot = botellas - 1
                                             nuevos_ml = ml + cap_tot - ml_necesarios
                                             nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml >= 10) else "A pedido"
-                                            c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, estado = ? WHERE id = ?", (nuevas_bot, nuevos_ml, nuevo_est, id_p))
+                                            execute_query("UPDATE stock SET botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, estado = ? WHERE id = ?", (nuevas_bot, nuevos_ml, nuevo_est, id_p))
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
-                                    
-                                    c.execute('''
+                                    execute_query('''
                                         INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad) 
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                     ''', (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", monto_cobrado_real_item, id_p, pres, cant))
 
                                     dias_u = item.get("dias_estimados", 90)
                                     fecha_rec = (fecha_actual + timedelta(days=dias_u)).strftime("%Y-%m-%d")
-                                    c.execute('''
+                                    execute_query('''
                                         INSERT INTO clientes_seguimiento (fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')
                                     ''', (fecha_actual.strftime("%Y-%m-%d"), cliente_venta, celular_venta, socio_vendedor_real, item['nombre'], pres, dias_u, fecha_rec))
 
-                            conn.commit()
-                            conn.close()
                             st.session_state.items_venta = []
                             st.success(f"¡Venta registrada con éxito!")
                             st.rerun()
@@ -1544,7 +1452,6 @@ else:
 
             if not df_seg.empty:
                 hoy_str = datetime.now().strftime("%Y-%m-%d")
-                
                 df_seg["vencido"] = df_seg["fecha_recordatorio"] <= hoy_str
                 df_vencidos = df_seg[df_seg["vencido"] & (df_seg["estado"] == "Pendiente")]
                 df_proximos = df_seg[~df_seg["vencido"] & (df_seg["estado"] == "Pendiente")]
@@ -1555,7 +1462,6 @@ else:
                     for _, row_c in df_vencidos.iterrows():
                         msg_auto = f"Hola {row_c['cliente_nombre']}! Te escribimos de STORIA PARFUMS. Esperamos que estés disfrutando tu perfume {row_c['perfume']} ✨. Calculamos que ya debe estar por terminarse o listo para renovar. Te dejamos nuestro catálogo actualizado: {URL_CATALOGO_PUBLICO}"
                         msg_enc = urllib.parse.quote(msg_auto)
-                        
                         cel_clean = formatear_celular_wa(row_c['cliente_celular'])
                         
                         col_seg1, col_seg2 = st.columns([3, 1])
@@ -1572,21 +1478,13 @@ else:
                                 st.markdown(f'<a href="https://wa.me/{cel_clean}?text={msg_enc}" target="_blank" class="btn-whatsapp">💬 Enviar WhatsApp</a>', unsafe_allow_html=True)
                             
                             if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
-                                conn = sqlite3.connect('inventario.db')
-                                c = conn.cursor()
-                                c.execute("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
-                                conn.commit()
-                                conn.close()
+                                execute_query("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = ?", (row_c['id'],))
                                 st.rerun()
 
                             confirm_del_seg = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_seg_{row_c['id']}")
                             if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
                                 if confirm_del_seg:
-                                    conn = sqlite3.connect('inventario.db')
-                                    c = conn.cursor()
-                                    c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_c['id'],))
-                                    conn.commit()
-                                    conn.close()
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = ?", (row_c['id'],))
                                     st.success("Registro eliminado.")
                                     st.rerun()
                                 else:
@@ -1605,11 +1503,7 @@ else:
                             confirm_del_prox = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prox_{row_p['id']}")
                             if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
                                 if confirm_del_prox:
-                                    conn = sqlite3.connect('inventario.db')
-                                    c = conn.cursor()
-                                    c.execute("DELETE FROM clientes_seguimiento WHERE id = ?", (row_p['id'],))
-                                    conn.commit()
-                                    conn.close()
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = ?", (row_p['id'],))
                                     st.rerun()
                                 else:
                                     st.warning("Marca la casilla para confirmar.")
@@ -1637,13 +1531,9 @@ else:
                     
                     btn_save_eg = st.form_submit_button("💾 Registar Gasto")
                     if btn_save_eg and monto_gasto > 0:
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
                         f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        c.execute("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (?, ?, ?, ?, ?)",
-                                  (f_hoy, cat_gasto, desc_gasto, monto_gasto, socio_gasto))
-                        conn.commit()
-                        conn.close()
+                        execute_query("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (?, ?, ?, ?, ?)",
+                                      (f_hoy, cat_gasto, desc_gasto, monto_gasto, socio_gasto))
                         st.success("¡Gasto registrado con éxito!")
                         st.rerun()
 
@@ -1652,11 +1542,7 @@ else:
 
             col_cf1, col_cf2 = st.columns([2, 1])
             with col_cf1:
-                tipo_filtro_f = st.radio(
-                    "Selecciona Período a consultar:",
-                    ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"],
-                    horizontal=True
-                )
+                tipo_filtro_f = st.radio("Selecciona Período a consultar:", ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"], horizontal=True)
             with col_cf2:
                 socio_filtro_contable = st.selectbox("👤 Filtrar Vendedor:", ["Todos los Socios"] + SOCIOS)
 
@@ -1704,7 +1590,6 @@ else:
                 if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
                     df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.date >= f_inicio) & (df_e_filt["fecha_dt"].dt.date <= f_fin)]
 
-            # Aplicar filtro por socio en ventas
             if socio_filtro_contable != "Todos los Socios":
                 if not df_h_filt.empty and "socio" in df_h_filt.columns:
                     df_h_filt = df_h_filt[df_h_filt["socio"] == socio_filtro_contable]
@@ -1760,7 +1645,7 @@ else:
                 min_value=1.0,
                 value=float(dolar_hoy),
                 step=10.0,
-                help="Esta cotización aplica solo para esta Orden de Compra y no cambia la cotización general del sistema."
+                help="Esta cotización aplica solo para esta Orden de Compra."
             )
 
             df_st_oc = cargar_datos_stock()
@@ -1791,15 +1676,11 @@ else:
                         
                         btn_oc_add = st.form_submit_button("➕ Agregar a la Orden de Compra")
                         if btn_oc_add:
-                            conn = sqlite3.connect('inventario.db')
-                            c = conn.cursor()
                             f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            c.execute('''
+                            execute_query('''
                                 INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             ''', (f_now, p_oc_sel, cap_oc, cant_oc, costo_override, est_inv, det_reserva, st.session_state.socio_autenticado))
-                            conn.commit()
-                            conn.close()
                             st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
                             st.rerun()
 
@@ -1815,15 +1696,11 @@ else:
                     
                     btn_oc_nuevo_add = st.form_submit_button("➕ Agregar Producto Nuevo")
                     if btn_oc_nuevo_add and nom_nuevo_oc.strip() != "":
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
                         f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        c.execute('''
+                        execute_query('''
                             INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
                             VALUES (?, ?, ?, ?, ?, 'Nuevo', '', ?)
                         ''', (f_now, nom_nuevo_oc.strip(), int(cap_nuevo_oc), cant_nuevo_oc, costo_nuevo_oc, st.session_state.socio_autenticado))
-                        conn.commit()
-                        conn.close()
                         st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
                         st.rerun()
 
@@ -1831,7 +1708,7 @@ else:
 
             if not df_oc_saved.empty:
                 st.markdown("---")
-                st.subheader("📝 Lista Compartida de Orden de Compra")
+                st.subheader("📝 Lista Compartida de Orden de Compra (Vista Interna)")
 
                 df_oc_saved["subtotal_usd"] = df_oc_saved["costo_usd"] * df_oc_saved["cantidad"]
                 df_oc_saved["costo_ars_prov"] = df_oc_saved["subtotal_usd"] * dolar_proveedor
@@ -1855,11 +1732,7 @@ else:
                         confirm_del_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_oc_{row_oc['id']}")
                         if st.button("🗑️ Eliminar", key=f"btn_del_oc_{row_oc['id']}"):
                             if confirm_del_oc:
-                                conn = sqlite3.connect('inventario.db')
-                                c = conn.cursor()
-                                c.execute("DELETE FROM ordenes_compra WHERE id = ?", (row_oc['id'],))
-                                conn.commit()
-                                conn.close()
+                                execute_query("DELETE FROM ordenes_compra WHERE id = ?", (row_oc['id'],))
                                 st.rerun()
                             else:
                                 st.warning("Marca la casilla para confirmar.")
@@ -1879,7 +1752,7 @@ else:
                 col_ocbtn1, col_ocbtn2 = st.columns(2)
                 with col_ocbtn1:
                     st.download_button(
-                        label="📄 Descargar Orden de Compra (PDF)",
+                        label="📄 Descargar Orden de Compra para Proveedor (PDF)",
                         data=pdf_oc_bytes,
                         file_name=f"Orden_Compra_Storia_{datetime.now().strftime('%d_%m_%Y')}.pdf",
                         mime="application/pdf"
@@ -1888,11 +1761,7 @@ else:
                     confirm_vaciar_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_oc_all")
                     if st.button("🚨 Vaciar Orden de Compra Completa"):
                         if confirm_vaciar_oc:
-                            conn = sqlite3.connect('inventario.db')
-                            c = conn.cursor()
-                            c.execute("DELETE FROM ordenes_compra")
-                            conn.commit()
-                            conn.close()
+                            execute_query("DELETE FROM ordenes_compra")
                             st.success("Orden de compra vaciada.")
                             st.rerun()
                         else:
@@ -1932,15 +1801,17 @@ else:
                 
                 if st.form_submit_button("Guardar Perfume"):
                     if nombre.strip() != "":
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
-                        c.execute("SELECT id, nombre FROM stock")
-                        todos = c.fetchall()
+                        df_ex = fetch_df("SELECT id, nombre FROM stock")
                         nom_norm = normalizar_texto(nombre.strip())
-                        encontrado_id = next((item_id for item_id, row_nom in todos if normalizar_texto(row_nom) == nom_norm), None)
+                        encontrado_id = None
+                        if not df_ex.empty:
+                            for _, r in df_ex.iterrows():
+                                if normalizar_texto(r["nombre"]) == nom_norm:
+                                    encontrado_id = r["id"]
+                                    break
 
                         if encontrado_id:
-                            c.execute('''
+                            execute_query('''
                                 UPDATE stock 
                                 SET tipo = ?, genero = ?, capacidad_ml = ?, botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, 
                                     decants_10ml_preparados = ?, costo_usd = ?, estado = ?,
@@ -1949,14 +1820,12 @@ else:
                             ''', (tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url, encontrado_id))
                             st.warning("Producto actualizado sin duplicar.")
                         else:
-                            c.execute('''
+                            execute_query('''
                                 INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ''', (nombre.strip(), tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url))
                             st.success("¡Perfume guardado!")
                             
-                        conn.commit()
-                        conn.close()
                         st.rerun()
 
         # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
@@ -1994,25 +1863,24 @@ else:
                         st.dataframe(df_pdf, use_container_width=True)
 
                         if st.button("🚀 Sincronizar Catálogo"):
-                            conn = sqlite3.connect('inventario.db')
-                            c = conn.cursor()
-                            c.execute("SELECT id, nombre FROM stock")
-                            dict_existentes = {normalizar_texto(nom): id_bd for id_bd, nom in c.fetchall()}
+                            df_ex = fetch_df("SELECT id, nombre FROM stock")
+                            dict_existentes = {}
+                            if not df_ex.empty:
+                                dict_existentes = {normalizar_texto(r["nombre"]): r["id"] for _, r in df_ex.iterrows()}
                             
                             cargados, actualizados = 0, 0
                             for _, r in df_pdf.iterrows():
                                 nom_norm = normalizar_texto(r['nombre'])
                                 if nom_norm in dict_existentes:
-                                    c.execute("UPDATE stock SET costo_usd = ?, capacidad_ml = ? WHERE id = ?", (r['costo_usd'], int(r['capacidad_ml']), dict_existentes[nom_norm]))
+                                    execute_query("UPDATE stock SET costo_usd = ?, capacidad_ml = ? WHERE id = ?", (r['costo_usd'], int(r['capacidad_ml']), dict_existentes[nom_norm]))
                                     actualizados += 1
                                 else:
-                                    c.execute('''
+                                    execute_query('''
                                         INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
                                         VALUES (?, '', 'Unisex', ?, 0, 0, 0, ?, 'A pedido', '')
                                     ''', (r['nombre'], int(r['capacidad_ml']), r['costo_usd']))
                                     cargados += 1
-                            conn.commit()
-                            conn.close()
+
                             st.success(f"¡Sincronizado! {actualizados} precios/volúmenes actualizados y {cargados} perfumes nuevos agregados.")
                             st.rerun()
                 except Exception as e:
@@ -2068,17 +1936,13 @@ else:
                     nueva_img = st.text_input("URL Imagen", value=str(val_img))
 
                     if st.form_submit_button("💾 Guardar Cambios de Stock"):
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
-                        c.execute('''
+                        execute_query('''
                             UPDATE stock
                             SET nombre = ?, tipo = ?, genero = ?, capacidad_ml = ?, estado = ?, costo_usd = ?, margen_100ml_custom = ?,
                                 botellas_100ml_cerradas = ?, ml_disponibles_abiertos = ?, decants_10ml_preparados = ?, 
                                 notas_olfativas = ?, imagen_url = ?
                             WHERE id = ?
                         ''', (nuevo_nombre, nuevo_tipo, nuevo_genero, int(nueva_capacidad), nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevas_notas, nueva_img, id_mod))
-                        conn.commit()
-                        conn.close()
                         st.success("¡Stock y datos del perfume actualizados correctamente!")
                         st.rerun()
 
@@ -2086,12 +1950,8 @@ else:
                 confirm_del_prod = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prod_{id_mod}")
                 if st.button(f"🗑️ Eliminar '{prod_data['nombre']}'"):
                     if confirm_del_prod:
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
-                        c.execute("DELETE FROM stock WHERE id = ?", (id_mod,))
-                        c.execute("DELETE FROM ordenes_compra WHERE nombre = ?", (prod_data['nombre'],))
-                        conn.commit()
-                        conn.close()
+                        execute_query("DELETE FROM stock WHERE id = ?", (id_mod,))
+                        execute_query("DELETE FROM ordenes_compra WHERE nombre = ?", (prod_data['nombre'],))
                         st.success("Perfume eliminado del sistema.")
                         st.rerun()
                     else:
@@ -2102,11 +1962,7 @@ else:
             confirm_vaciar_cat = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_cat_master")
             if st.button("🚨 VACIAR CATALOGO COMPLETO"):
                 if clave_inv_input == CLAVE_ADMIN_MASTER and confirm_vaciar_cat:
-                    conn = sqlite3.connect('inventario.db')
-                    c = conn.cursor()
-                    c.execute("DELETE FROM stock")
-                    conn.commit()
-                    conn.close()
+                    execute_query("DELETE FROM stock")
                     st.success("Catálogo vaciado.")
                     st.rerun()
                 else:
@@ -2153,32 +2009,27 @@ else:
                 confirm_anular = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_anular_hist_{id_h_del}")
                 if st.button("🔄 Anular Movimiento & Devolver Stock Automáticamente"):
                     if confirm_anular:
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
+                        df_res_h = fetch_df("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = ?", (id_h_del,))
                         
-                        c.execute("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = ?", (id_h_del,))
-                        res_h = c.fetchone()
-                        
-                        if res_h:
-                            id_p, pres, cant = res_h
-                            cant = cant if cant and cant > 0 else 1
+                        if not df_res_h.empty:
+                            r_h = df_res_h.iloc[0]
+                            id_p = r_h["id_producto"]
+                            pres = r_h["presentacion"]
+                            cant = int(r_h["cantidad"]) if pd.notnull(r_h["cantidad"]) and int(r_h["cantidad"]) > 0 else 1
                             
                             if id_p and id_p > 0:
-                                c.execute("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = ?", (id_p,))
-                                row_p = c.fetchone()
-                                
-                                if row_p:
-                                    bot, ml, dec = row_p
+                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = ?", (id_p,))
+                                if not df_stock_p.empty:
+                                    r_p = df_stock_p.iloc[0]
+                                    bot, ml, dec = int(r_p["botellas_100ml_cerradas"]), int(r_p["ml_disponibles_abiertos"]), int(r_p["decants_10ml_preparados"])
                                     if "Frasco" in str(pres):
-                                        c.execute("UPDATE stock SET botellas_100ml_cerradas = ?, estado = 'En Stock' WHERE id = ?", (bot + cant, id_p))
+                                        execute_query("UPDATE stock SET botellas_100ml_cerradas = ?, estado = 'En Stock' WHERE id = ?", (bot + cant, id_p))
                                     elif "Listo" in str(pres):
-                                        c.execute("UPDATE stock SET decants_10ml_preparados = ?, estado = 'En Stock' WHERE id = ?", (dec + cant, id_p))
+                                        execute_query("UPDATE stock SET decants_10ml_preparados = ?, estado = 'En Stock' WHERE id = ?", (dec + cant, id_p))
                                     elif "abierto" in str(pres):
-                                        c.execute("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock' WHERE id = ?", (ml + (cant * 10), id_p))
+                                        execute_query("UPDATE stock SET ml_disponibles_abiertos = ?, estado = 'En Stock' WHERE id = ?", (ml + (cant * 10), id_p))
 
-                        c.execute("DELETE FROM historial WHERE id = ?", (id_h_del,))
-                        conn.commit()
-                        conn.close()
+                        execute_query("DELETE FROM historial WHERE id = ?", (id_h_del,))
                         st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
                         st.rerun()
                     else:
@@ -2189,48 +2040,10 @@ else:
                 confirm_vaciar_hist = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_hist_master")
                 if st.button("🚨 VACIAR HISTORIAL COMPLETO"):
                     if clave_hist == CLAVE_ADMIN_MASTER and confirm_vaciar_hist:
-                        conn = sqlite3.connect('inventario.db')
-                        c = conn.cursor()
-                        c.execute("DELETE FROM historial")
-                        conn.commit()
-                        conn.close()
+                        execute_query("DELETE FROM historial")
                         st.warning("Historial vaciado.")
                         st.rerun()
                     else:
                         st.error("Clave incorrecta o casilla de confirmación no marcada.")
             else:
                 st.info("Sin movimientos en el historial.")
-
-        # --- SECCIÓN: COPIA DE SEGURIDAD (BACKUP) ---
-        elif seccion_admin == "💾 Copia de Seguridad":
-            st.header("💾 Copia de Seguridad y Respaldo")
-            st.info("Descarga una copia completa de la base de datos para resguardo.")
-            
-            try:
-                with open("inventario.db", "rb") as fp:
-                    backup_bytes = fp.read()
-                    
-                st.download_button(
-                    label="📥 Descargar Base de Datos Completa (.db)",
-                    data=backup_bytes,
-                    file_name=f"Backup_Storia_Parfums_{datetime.now().strftime('%Y_%m_%d_%H%M')}.db",
-                    mime="application/x-sqlite3"
-                )
-            except FileNotFoundError:
-                st.error("Aún no se ha generado la base de datos local.")
-                
-            st.markdown("---")
-            st.subheader("🔄 Restaurar Copia de Seguridad")
-            
-            uploaded_backup = st.file_uploader("Subir archivo de respaldo (.db):", type=["db"])
-            
-            if uploaded_backup is not None:
-                confirm_restore = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_restore_backup_db")
-                if st.button("⚠️ Confirmar y Restaurar Base de Datos"):
-                    if confirm_restore:
-                        with open("inventario.db", "wb") as f:
-                            f.write(uploaded_backup.getbuffer())
-                        st.success("¡Base de datos restaurada con éxito!")
-                        st.rerun()
-                    else:
-                        st.warning("Marca la casilla para restaurar la base de datos.")

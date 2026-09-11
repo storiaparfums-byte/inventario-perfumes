@@ -24,16 +24,20 @@ st.set_page_config(page_title="Storia Parfums", page_icon="🧪", layout="wide")
 st.title("🧪 Storia Parfums - Sistema de Inventario y Ventas")
 
 # ---------------------------------------------------------
-# CONEXIÓN A SUPABASE (POSTGRESQL)
+# CONEXIÓN A SUPABASE (VARIABLES SEPARADAS)
 # ---------------------------------------------------------
 try:
-    DATABASE_URL = st.secrets["DATABASE_URL"]
+    db_user = st.secrets["DB_USER"]
+    db_password = st.secrets["DB_PASSWORD"]
+    db_host = st.secrets["DB_HOST"]
+    db_port = st.secrets["DB_PORT"]
+    db_name = st.secrets["DB_NAME"]
+
+    # Construimos la URL de conexión de forma segura
+    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
     def get_engine():
-        url = DATABASE_URL
-        if url.startswith("postgresql://"):
-            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        engine = sa.create_engine(url, pool_pre_ping=True)
+        engine = sa.create_engine(DATABASE_URL, pool_pre_ping=True)
         return engine
 
     def execute_query(query, params=()):
@@ -50,7 +54,7 @@ try:
         with engine.connect() as conn:
             return pd.read_sql(text(query), conn, params=params if params else None)
 
-    # Inicialización de tablas
+    # Inicialización de tablas en la nueva base de datos
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(text('''
@@ -73,8 +77,78 @@ try:
                 imagen_url TEXT DEFAULT ''
             )
         '''))
-    
-    st.success("¡Conexión exitosa con la base de datos en Supabase! 🚀")
+
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS historial (
+                id SERIAL PRIMARY KEY,
+                fecha TEXT,
+                perfume TEXT,
+                socio TEXT,
+                tipo_movimiento TEXT,
+                monto_ingreso_ars REAL DEFAULT 0.0,
+                id_producto INTEGER DEFAULT 0,
+                presentacion TEXT DEFAULT '',
+                cantidad INTEGER INTEGER DEFAULT 1
+            )
+        '''))
+
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                cotizacion_dolar REAL,
+                margen_100ml REAL,
+                margen_decant REAL,
+                costo_envase_decant_ars REAL
+            )
+        '''))
+        
+        conn.execute(text('''
+            INSERT INTO config (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars)
+            VALUES (1, 1200.0, 30.0, 100.0, 800.0)
+            ON CONFLICT (id) DO NOTHING
+        '''))
+
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS clientes_seguimiento (
+                id SERIAL PRIMARY KEY,
+                fecha_compra TEXT,
+                cliente_nombre TEXT,
+                cliente_celular TEXT,
+                socio_vendedor TEXT,
+                perfume TEXT,
+                presentacion TEXT,
+                dias_estimados INTEGER,
+                fecha_recordatorio TEXT,
+                estado TEXT DEFAULT 'Pendiente'
+            )
+        '''))
+
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS egresos (
+                id SERIAL PRIMARY KEY,
+                fecha TEXT,
+                categoria TEXT,
+                descripcion TEXT,
+                monto_ars REAL,
+                socio_registra TEXT
+            )
+        '''))
+
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS ordenes_compra (
+                id SERIAL PRIMARY KEY,
+                fecha TEXT,
+                nombre TEXT,
+                capacidad_ml INTEGER,
+                cantidad INTEGER,
+                costo_usd REAL,
+                estado_inventario TEXT,
+                detalle_reserva TEXT,
+                socio_agrega TEXT
+            )
+        '''))
+
+    st.success("¡Conectado exitosamente a Supabase y tablas inicializadas con éxito! 🚀")
 
 except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")

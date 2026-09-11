@@ -2,4 +2,5 @@ streamlit
 pandas
 pypdf
 reportlab
-libsql-client
+sqlalchemy
+psycopg2-binary

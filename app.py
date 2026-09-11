@@ -24,19 +24,16 @@ st.set_page_config(page_title="Storia Parfums", page_icon="🧪", layout="wide")
 st.title("🧪 Storia Parfums - Sistema de Inventario y Ventas")
 
 # ---------------------------------------------------------
-# CONEXIÓN A SUPABASE (POSTGRESQL - VARIABLES SEPARADAS)
+# CONEXIÓN A SUPABASE (POSTGRESQL)
 # ---------------------------------------------------------
 try:
-    db_user = st.secrets["DB_USER"]
-    db_password = st.secrets["DB_PASSWORD"]
-    db_host = st.secrets["DB_HOST"]
-    db_port = st.secrets["DB_PORT"]
-    db_name = st.secrets["DB_NAME"]
-
-    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    DATABASE_URL = st.secrets["DATABASE_URL"]
 
     def get_engine():
-        engine = sa.create_engine(DATABASE_URL, pool_pre_ping=True)
+        url = DATABASE_URL
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        engine = sa.create_engine(url, pool_pre_ping=True)
         return engine
 
     def execute_query(query, params=()):
@@ -53,7 +50,7 @@ try:
         with engine.connect() as conn:
             return pd.read_sql(text(query), conn, params=params if params else None)
 
-    # Inicialización de tablas de prueba rápida
+    # Inicialización de tablas
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(text('''
@@ -77,12 +74,7 @@ try:
             )
         '''))
     
-    st.success("¡Conexión exitosa con la base de datos en Supabase!")
+    st.success("¡Conexión exitosa con la base de datos en Supabase! 🚀")
 
 except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
-
-# ---------------------------------------------------------
-# RESTO DE TU APLICACIÓN
-# ---------------------------------------------------------
-st.info("El sistema está cargando el panel principal...")

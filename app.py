@@ -22,8 +22,12 @@ from reportlab.lib import colors
 DATABASE_URL = st.secrets["DATABASE_URL"]
 
 def get_engine():
-    # Creamos el motor de conexión a la base de datos en la nube
-    engine = sa.create_engine(DATABASE_URL)
+    url = DATABASE_URL
+    # Forzamos el uso explícito del driver psycopg2 y agregamos pre-ping para estabilidad
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    
+    engine = sa.create_engine(url, pool_pre_ping=True)
     return engine
 
 def execute_query(query, params=()):

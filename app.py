@@ -24,20 +24,16 @@ st.set_page_config(page_title="Storia Parfums", page_icon="🧪", layout="wide")
 st.title("🧪 Storia Parfums - Sistema de Inventario y Ventas")
 
 # ---------------------------------------------------------
-# CONEXIÓN A SUPABASE (VARIABLES SEPARADAS)
+# CONEXIÓN A SUPABASE (POOLER)
 # ---------------------------------------------------------
 try:
-    db_user = st.secrets["DB_USER"]
-    db_password = st.secrets["DB_PASSWORD"]
-    db_host = st.secrets["DB_HOST"]
-    db_port = st.secrets["DB_PORT"]
-    db_name = st.secrets["DB_NAME"]
-
-    # Construimos la URL de conexión de forma segura
-    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    DATABASE_URL = st.secrets["DATABASE_URL"]
 
     def get_engine():
-        engine = sa.create_engine(DATABASE_URL, pool_pre_ping=True)
+        url = DATABASE_URL
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        engine = sa.create_engine(url, pool_pre_ping=True)
         return engine
 
     def execute_query(query, params=()):
@@ -54,7 +50,7 @@ try:
         with engine.connect() as conn:
             return pd.read_sql(text(query), conn, params=params if params else None)
 
-    # Inicialización de tablas en la nueva base de datos
+    # Inicialización automática de todas las tablas del sistema
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(text('''
@@ -88,7 +84,7 @@ try:
                 monto_ingreso_ars REAL DEFAULT 0.0,
                 id_producto INTEGER DEFAULT 0,
                 presentacion TEXT DEFAULT '',
-                cantidad INTEGER INTEGER DEFAULT 1
+                cantidad INTEGER DEFAULT 1
             )
         '''))
 
@@ -148,7 +144,13 @@ try:
             )
         '''))
 
-    st.success("¡Conectado exitosamente a Supabase y tablas inicializadas con éxito! 🚀")
+    st.success("¡Conexión exitosa con Supabase y tablas inicializadas correctamente! 🚀")
 
 except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
+    st.stop()
+
+# ---------------------------------------------------------
+# INTERFAZ PRINCIPAL DE LA APLICACIÓN
+# ---------------------------------------------------------
+st.info("El sistema está listo para operar.")

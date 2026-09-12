@@ -24,16 +24,19 @@ st.set_page_config(page_title="Storia Parfums", page_icon="🧪", layout="wide")
 st.title("🧪 Storia Parfums - Sistema de Inventario y Ventas")
 
 # ---------------------------------------------------------
-# CONEXIÓN A SUPABASE (POOLER)
+# CONEXIÓN A SUPABASE (VARIABLES SEPARADAS - POOLER)
 # ---------------------------------------------------------
 try:
-    DATABASE_URL = st.secrets["DATABASE_URL"]
+    db_user = st.secrets["DB_USER"]
+    db_password = st.secrets["DB_PASSWORD"]
+    db_host = st.secrets["DB_HOST"]
+    db_port = st.secrets["DB_PORT"]
+    db_name = st.secrets["DB_NAME"]
+
+    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
     def get_engine():
-        url = DATABASE_URL
-        if url.startswith("postgresql://"):
-            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        engine = sa.create_engine(url, pool_pre_ping=True)
+        engine = sa.create_engine(DATABASE_URL, pool_pre_ping=True)
         return engine
 
     def execute_query(query, params=()):

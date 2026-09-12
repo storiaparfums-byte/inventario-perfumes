@@ -73,14 +73,14 @@ try:
         engine = sa.create_engine(DATABASE_URL, pool_pre_ping=True)
         return engine
 
-    def execute_query(query, params=()):
+    def execute_query(query, params=None):
         engine = get_engine()
         with engine.begin() as conn:
             if "?" in query and "%s" not in query:
                 query = query.replace("?", "%s")
-            conn.execute(text(query), params)
+            conn.execute(text(query), params if params is not None else {})
 
-    def fetch_df(query, params=()):
+    def fetch_df(query, params=None):
         engine = get_engine()
         if "?" in query and "%s" not in query:
             query = query.replace("?", "%s")
@@ -407,9 +407,9 @@ def cargar_config():
 def guardar_config(dolar, m100, mdec, envase):
     execute_query('''
         UPDATE config 
-        SET cotizacion_dolar = %s, margen_100ml = %s, margen_decant = %s, costo_envase_decant_ars = %s
+        SET cotizacion_dolar = :dolar, margen_100ml = :m100, margen_decant = :mdec, costo_envase_decant_ars = :envase
         WHERE id = 1
-    ''', (dolar, m100, mdec, envase))
+    ''', {"dolar": dolar, "m100": m100, "mdec": mdec, "envase": envase})
 
 def normalizar_texto(texto):
     if not texto:
@@ -1113,10 +1113,10 @@ else:
                     st.markdown("---")
                     st.subheader("🎁 Descuento General sobre la Compra")
                     
-                    tipo_descuento = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento en Lista (%)", "Porcentaje Personalizado (%)"], horizontal=True)
+                    tipo_descuento = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento in Lista (%)", "Porcentaje Personalizado (%)"], horizontal=True)
                     monto_desc_pres = 0.0
                     
-                    if tipo_descuento == "Descuento en Lista (%)":
+                    if tipo_descuento == "Descuento in Lista (%)":
                         pct_desc = st.selectbox("Selecciona Porcentaje:", [0, 5, 10, 15, 20], index=0)
                         monto_desc_pres = subtotal_pres * (pct_desc / 100.0)
                     elif tipo_descuento == "Monto Fijo Manual ($ ARS)":
@@ -1273,7 +1273,7 @@ else:
 
                             for item in st.session_state.items_venta:
                                 id_p = item["id_producto"]
-                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = %s", (id_p,))
+                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = :id_p", {"id_p": id_p})
                                 
                                 if not df_stock_p.empty:
                                     r_p = df_stock_p.iloc[0]
@@ -1290,43 +1290,43 @@ else:
                                         nuevo_est = "En Stock" if (nuevas_botellas > 0 or decants > 0 or ml >= 10) else "A pedido"
                                         execute_query('''
                                             UPDATE stock 
-                                            SET botellas_100ml_cerradas = %s, estado = %s, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
-                                            WHERE id = %s
-                                        ''', (nuevas_botellas, nuevo_est, id_p))
+                                            SET botellas_100ml_cerradas = :nbot, estado = :est, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
+                                            WHERE id = :id_p
+                                        ''', {"nbot": nuevas_botellas, "est": nuevo_est, "id_p": id_p})
 
                                     elif "Listo" in pres:
                                         nuevos_decants = max(0, decants - cant)
                                         nuevo_est = "En Stock" if (nuevos_decants > 0 or botellas > 0 or ml >= 10) else "A pedido"
                                         execute_query('''
                                             UPDATE stock 
-                                            SET decants_10ml_preparados = %s, estado = %s, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
-                                            WHERE id = %s
-                                        ''', (nuevos_decants, nuevo_est, id_p))
+                                            SET decants_10ml_preparados = :ndec, estado = :est, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
+                                            WHERE id = :id_p
+                                        ''', {"ndec": nuevos_decants, "est": nuevo_est, "id_p": id_p})
 
                                     elif "abierto" in pres:
                                         ml_necesarios = cant * 10
                                         if ml >= ml_necesarios:
                                             nuevos_ml = ml - ml_necesarios
                                             nuevo_est = "En Stock" if (nuevos_ml >= 10 or botellas > 0 or decants > 0) else "A pedido"
-                                            execute_query("UPDATE stock SET ml_disponibles_abiertos = %s, estado = %s, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = %s", (nuevos_ml, nuevo_est, id_p))
+                                            execute_query("UPDATE stock SET ml_disponibles_abiertos = :nml, estado = :est, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = :id_p", {"nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
                                         elif botellas > 0:
                                             nuevas_bot = botellas - 1
                                             nuevos_ml = ml + cap_tot - ml_necesarios
                                             nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml >= 10) else "A pedido"
-                                            execute_query("UPDATE stock SET botellas_100ml_cerradas = %s, ml_disponibles_abiertos = %s, estado = %s WHERE id = %s", (nuevas_bot, nuevos_ml, nuevo_est, id_p))
+                                            execute_query("UPDATE stock SET botellas_100ml_cerradas = :nbot, ml_disponibles_abiertos = :nml, estado = :est WHERE id = :id_p", {"nbot": nuevas_bot, "nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
 
                                     info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
                                     execute_query('''
                                         INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad) 
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                    ''', (fecha_actual_str, item['nombre'], socio_vendedor_real, f"{pres} (x{cant}) - {info_cli}", monto_cobrado_real_item, id_p, pres, cant))
+                                        VALUES (:fec, :perf, :soc, :tip, :mon, :idp, :pres, :cant)
+                                    ''', {"fec": fecha_actual_str, "perf": item['nombre'], "soc": socio_vendedor_real, "tip": f"{pres} (x{cant}) - {info_cli}", "mon": monto_cobrado_real_item, "idp": id_p, "pres": pres, "cant": cant})
 
                                     dias_u = item.get("dias_estimados", 90)
                                     fecha_rec = (fecha_actual + timedelta(days=dias_u)).strftime("%Y-%m-%d")
                                     execute_query('''
                                         INSERT INTO clientes_seguimiento (fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pendiente')
-                                    ''', (fecha_actual.strftime("%Y-%m-%d"), cliente_venta, celular_venta, socio_vendedor_real, item['nombre'], pres, dias_u, fecha_rec))
+                                        VALUES (:fcomp, :cnom, :ccel, :svend, :perf, :pres, :dias, :frec, 'Pendiente')
+                                    ''', {"fcomp": fecha_actual.strftime("%Y-%m-%d"), "cnom": cliente_venta, "ccel": celular_venta, "svend": socio_vendedor_real, "perf": item['nombre'], "pres": pres, "dias": dias_u, "frec": fecha_rec})
 
                             st.session_state.items_venta = []
                             st.success(f"¡Venta registrada con éxito!")
@@ -1376,13 +1376,13 @@ else:
                                 st.markdown(f'<a href="https://wa.me/{cel_clean}?text={msg_enc}" target="_blank" class="btn-whatsapp">💬 Enviar WhatsApp</a>', unsafe_allow_html=True)
                             
                             if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
-                                execute_query("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = %s", (row_c['id'],))
+                                execute_query("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = :id_seg", {"id_seg": row_c['id']})
                                 st.rerun()
 
                             confirm_del_seg = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_seg_{row_c['id']}")
                             if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
                                 if confirm_del_seg:
-                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = %s", (row_c['id'],))
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = :id_seg", {"id_seg": row_c['id']})
                                     st.success("Registro eliminado.")
                                     st.rerun()
                                 else:
@@ -1401,7 +1401,7 @@ else:
                             confirm_del_prox = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prox_{row_p['id']}")
                             if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
                                 if confirm_del_prox:
-                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = %s", (row_p['id'],))
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = :id_seg", {"id_seg": row_p['id']})
                                     st.rerun()
                                 else:
                                     st.warning("Marca la casilla para confirmar.")
@@ -1430,8 +1430,8 @@ else:
                     btn_save_eg = st.form_submit_button("💾 Registar Gasto")
                     if btn_save_eg and monto_gasto > 0:
                         f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        execute_query("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (%s, %s, %s, %s, %s)",
-                                      (f_hoy, cat_gasto, desc_gasto, monto_gasto, socio_gasto))
+                        execute_query("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (:fec, :cat, :desc, :mon, :soc)",
+                                      {"fec": f_hoy, "cat": cat_gasto, "desc": desc_gasto, "mon": monto_gasto, "soc": socio_gasto})
                         st.success("¡Gasto registrado con éxito!")
                         st.rerun()
 
@@ -1571,8 +1571,8 @@ else:
                             f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             execute_query('''
                                 INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
-                                VALUES (%s, %s, %s, %s, %s, %s, '', %s)
-                            ''', (f_now, p_oc_sel, cap_oc, cant_oc, costo_override, est_inv, st.session_state.socio_autenticado))
+                                VALUES (:fec, :nom, :cap, :cant, :costo, :est, '', :soc)
+                            ''', {"fec": f_now, "nom": p_oc_sel, "cap": cap_oc, "cant": cant_oc, "costo": costo_override, "est": est_inv, "soc": st.session_state.socio_autenticado})
                             st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
                             st.rerun()
 
@@ -1591,8 +1591,8 @@ else:
                         f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         execute_query('''
                             INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
-                            VALUES (%s, %s, %s, %s, %s, 'Nuevo', '', %s)
-                        ''', (f_now, nom_nuevo_oc.strip(), int(cap_nuevo_oc), cant_nuevo_oc, costo_nuevo_oc, st.session_state.socio_autenticado))
+                            VALUES (:fec, :nom, :cap, :cant, :costo, 'Nuevo', '', :soc)
+                        ''', {"fec": f_now, "nom": nom_nuevo_oc.strip(), "cap": int(cap_nuevo_oc), "cant": cant_nuevo_oc, "costo": costo_nuevo_oc, "soc": st.session_state.socio_autenticado})
                         st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
                         st.rerun()
 
@@ -1623,7 +1623,7 @@ else:
                         confirm_del_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_oc_{row_oc['id']}")
                         if st.button("🗑️ Eliminar", key=f"btn_del_oc_{row_oc['id']}"):
                             if confirm_del_oc:
-                                execute_query("DELETE FROM ordenes_compra WHERE id = %s", (row_oc['id'],))
+                                execute_query("DELETE FROM ordenes_compra WHERE id = :id_oc", {"id_oc": row_oc['id']})
                                 st.rerun()
                             else:
                                 st.warning("Marca la casilla para confirmar.")
@@ -1704,17 +1704,17 @@ else:
                         if encontrado_id:
                             execute_query('''
                                 UPDATE stock 
-                                SET tipo = %s, genero = %s, capacidad_ml = %s, botellas_100ml_cerradas = %s, ml_disponibles_abiertos = %s, 
-                                    decants_10ml_preparados = %s, costo_usd = %s, estado = %s,
-                                    notas_olfativas = %s, imagen_url = %s
-                                WHERE id = %s
-                            ''', (tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url, encontrado_id))
+                                SET tipo = :tipo, genero = :genero, capacidad_ml = :cap, botellas_100ml_cerradas = :bot, ml_disponibles_abiertos = :mlab, 
+                                    decants_10ml_preparados = :dec, costo_usd = :costo, estado = :est,
+                                    notas_olfativas = :notas, imagen_url = :img
+                                WHERE id = :idp
+                            ''', {"tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url, "idp": encontrado_id})
                             st.warning("Producto actualizado sin duplicar.")
                         else:
                             execute_query('''
                                 INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ''', (nombre.strip(), tipo, genero_sel, int(capacidad_ml), botellas, ml_abiertos, decants, costo_usd, estado, notas_olfativas, imagen_url))
+                                VALUES (:nom, :tipo, :genero, :cap, :bot, :mlab, :dec, :costo, :est, :notas, :img)
+                            ''', {"nom": nombre.strip(), "tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url})
                             st.success("¡Perfume guardado!")
                             
                         st.rerun()
@@ -1841,11 +1841,11 @@ else:
                     if st.form_submit_button("💾 Guardar Cambios de Stock"):
                         execute_query('''
                             UPDATE stock
-                            SET nombre = %s, tipo = %s, genero = %s, capacidad_ml = %s, estado = %s, costo_usd = %s, margen_100ml_custom = %s,
-                                botellas_100ml_cerradas = %s, ml_disponibles_abiertos = %s, decants_10ml_preparados = %s, 
-                                notas_olfativas = %s, imagen_url = %s
-                            WHERE id = %s
-                        ''', (nuevo_nombre, nuevo_tipo, nuevo_genero, int(nueva_capacidad), nuevo_estado, nuevo_costo, nuevo_margen, nbot, nml, ndec, nuevas_notas, nueva_img, id_mod))
+                            SET nombre = :nom, tipo = :tipo, genero = :gen, capacidad_ml = :cap, estado = :est, costo_usd = :costo, margen_100ml_custom = :marg,
+                                botellas_100ml_cerradas = :nbot, ml_disponibles_abiertos = :nml, decants_10ml_preparados = :ndec, 
+                                notas_olfativas = :notas, imagen_url = :img
+                            WHERE id = :idp
+                        ''', {"nom": nuevo_nombre, "tipo": nuevo_tipo, "gen": nuevo_genero, "cap": int(nueva_capacidad), "est": nuevo_estado, "costo": nuevo_costo, "marg": nuevo_margen, "nbot": nbot, "nml": nml, "ndec": ndec, "notas": nuevas_notas, "img": nueva_img, "idp": id_mod})
                         st.success("¡Stock y datos del perfume actualizados correctamente!")
                         st.rerun()
 
@@ -1853,8 +1853,8 @@ else:
                 confirm_del_prod = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prod_{id_mod}")
                 if st.button(f"🗑️ Eliminar '{prod_data['nombre']}'"):
                     if confirm_del_prod:
-                        execute_query("DELETE FROM stock WHERE id = %s", (id_mod,))
-                        execute_query("DELETE FROM ordenes_compra WHERE nombre = %s", (prod_data['nombre'],))
+                        execute_query("DELETE FROM stock WHERE id = :idp", {"idp": id_mod})
+                        execute_query("DELETE FROM ordenes_compra WHERE nombre = :nom", {"nom": prod_data['nombre']})
                         st.success("Perfume eliminado del sistema.")
                         st.rerun()
                     else:
@@ -1912,7 +1912,7 @@ else:
                 confirm_anular = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_anular_hist_{id_h_del}")
                 if st.button("🔄 Anular Movimiento & Devolver Stock Automáticamente"):
                     if confirm_anular:
-                        df_res_h = fetch_df("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = %s", (id_h_del,))
+                        df_res_h = fetch_df("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = :idh", {"idh": id_h_del})
                         
                         if not df_res_h.empty:
                             r_h = df_res_h.iloc[0]
@@ -1921,18 +1921,18 @@ else:
                             cant = int(r_h["cantidad"]) if pd.notnull(r_h["cantidad"]) and int(r_h["cantidad"]) > 0 else 1
                             
                             if id_p and id_p > 0:
-                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = %s", (id_p,))
+                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = :idp", {"idp": id_p})
                                 if not df_stock_p.empty:
                                     r_p = df_stock_p.iloc[0]
                                     bot, ml, dec = int(r_p["botellas_100ml_cerradas"]), int(r_p["ml_disponibles_abiertos"]), int(r_p["decants_10ml_preparados"])
                                     if "Frasco" in str(pres):
-                                        execute_query("UPDATE stock SET botellas_100ml_cerradas = %s, estado = 'En Stock' WHERE id = %s", (bot + cant, id_p))
+                                        execute_query("UPDATE stock SET botellas_100ml_cerradas = :nbot, estado = 'En Stock' WHERE id = :idp", {"nbot": bot + cant, "idp": id_p})
                                     elif "Listo" in str(pres):
-                                        execute_query("UPDATE stock SET decants_10ml_preparados = %s, estado = 'En Stock' WHERE id = %s", (dec + cant, id_p))
+                                        execute_query("UPDATE stock SET decants_10ml_preparados = :ndec, estado = 'En Stock' WHERE id = :idp", {"ndec": dec + cant, "idp": id_p})
                                     elif "abierto" in str(pres):
-                                        execute_query("UPDATE stock SET ml_disponibles_abiertos = %s, estado = 'En Stock' WHERE id = %s", (ml + (cant * 10), id_p))
+                                        execute_query("UPDATE stock SET ml_disponibles_abiertos = :nml, estado = 'En Stock' WHERE id = :idp", {"nml": ml + (cant * 10), "idp": id_p})
 
-                        execute_query("DELETE FROM historial WHERE id = %s", (id_h_del,))
+                        execute_query("DELETE FROM historial WHERE id = :idh", {"idh": id_h_del})
                         st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
                         st.rerun()
                     else:

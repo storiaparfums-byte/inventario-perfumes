@@ -1996,44 +1996,86 @@ else:
                                     if "stock" in data_restaurar:
                                         conn.execute(text("DELETE FROM stock"))
                                         for r in data_restaurar["stock"]:
-                                            conn.execute(text('''INSERT INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
-                                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''), (
-                                                r.get("id"), str(r.get("nombre", "")), str(r.get("tipo", "")), str(r.get("genero", "Unisex")), int(r.get("capacidad_ml", 100)),
-                                                int(r.get("botellas_100ml_cerradas", 0)), int(r.get("ml_disponibles_abiertos", 0)), int(r.get("decants_10ml_preparados", 0)),
-                                                float(r.get("costo_usd", 0.0)), r.get("margen_100ml_custom"), str(r.get("estado", "A pedido")), str(r.get("socio_asignado", "")),
-                                                float(r.get("monto_senado_ars", 0.0)), str(r.get("cliente_senado", "")), str(r.get("notas_olfativas", "")), str(r.get("imagen_url", ""))
-                                            ))
+                                            conn.execute(
+                                                text('''INSERT INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
+                                                        VALUES (:id, :nombre, :tipo, :genero, :capacidad_ml, :botellas_100ml_cerradas, :ml_disponibles_abiertos, :decants_10ml_preparados, :costo_usd, :margen_100ml_custom, :estado, :socio_asignado, :monto_senado_ars, :cliente_senado, :notas_olfativas, :imagen_url)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "nombre": str(r.get("nombre", "")),
+                                                    "tipo": str(r.get("tipo", "")),
+                                                    "genero": str(r.get("genero", "Unisex")),
+                                                    "capacidad_ml": int(r.get("capacidad_ml", 100)),
+                                                    "botellas_100ml_cerradas": int(r.get("botellas_100ml_cerradas", 0)),
+                                                    "ml_disponibles_abiertos": int(r.get("ml_disponibles_abiertos", 0)),
+                                                    "decants_10ml_preparados": int(r.get("decants_10ml_preparados", 0)),
+                                                    "costo_usd": float(r.get("costo_usd", 0.0)),
+                                                    "margen_100ml_custom": r.get("margen_100ml_custom"),
+                                                    "estado": str(r.get("estado", "A pedido")),
+                                                    "socio_asignado": str(r.get("socio_asignado", "")),
+                                                    "monto_senado_ars": float(r.get("monto_senado_ars", 0.0)),
+                                                    "cliente_senado": str(r.get("cliente_senado", "")),
+                                                    "notas_olfativas": str(r.get("notas_olfativas", "")),
+                                                    "imagen_url": str(r.get("imagen_url", ""))
+                                                }
+                                            )
 
                                     # 2. HISTORIAL
                                     if "historial" in data_restaurar:
                                         conn.execute(text("DELETE FROM historial"))
                                         for r in data_restaurar["historial"]:
-                                            conn.execute(text('''INSERT INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
-                                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)'''), (
-                                                r.get("id"), str(r.get("fecha", "")), str(r.get("perfume", "")), str(r.get("socio", "")), str(r.get("tipo_movimiento", "")),
-                                                float(r.get("monto_ingreso_ars", 0.0)), int(r.get("id_producto", 0)), str(r.get("presentacion", "")), int(r.get("cantidad", 1))
-                                            ))
+                                            conn.execute(
+                                                text('''INSERT INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                                        VALUES (:id, :fecha, :perfume, :socio, :tipo_movimiento, :monto_ingreso_ars, :id_producto, :presentacion, :cantidad)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha": str(r.get("fecha", "")),
+                                                    "perfume": str(r.get("perfume", "")),
+                                                    "socio": str(r.get("socio", "")),
+                                                    "tipo_movimiento": str(r.get("tipo_movimiento", "")),
+                                                    "monto_ingreso_ars": float(r.get("monto_ingreso_ars", 0.0)),
+                                                    "id_producto": int(r.get("id_producto", 0)),
+                                                    "presentacion": str(r.get("presentacion", "")),
+                                                    "cantidad": int(r.get("cantidad", 1))
+                                                }
+                                            )
 
                                     # 3. EGRESOS
                                     if "egresos" in data_restaurar:
                                         conn.execute(text("DELETE FROM egresos"))
                                         for r in data_restaurar["egresos"]:
-                                            conn.execute(text('''INSERT INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
-                                                                VALUES (%s, %s, %s, %s, %s, %s)'''), (
-                                                r.get("id"), str(r.get("fecha", "")), str(r.get("categoria", "")), str(r.get("descripcion", "")),
-                                                float(r.get("monto_ars", 0.0)), str(r.get("socio_registra", ""))
-                                            ))
+                                            conn.execute(
+                                                text('''INSERT INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
+                                                        VALUES (:id, :fecha, :categoria, :descripcion, :monto_ars, :socio_registra)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha": str(r.get("fecha", "")),
+                                                    "categoria": str(r.get("categoria", "")),
+                                                    "descripcion": str(r.get("descripcion", "")),
+                                                    "monto_ars": float(r.get("monto_ars", 0.0)),
+                                                    "socio_registra": str(r.get("socio_registra", ""))
+                                                }
+                                            )
 
                                     # 4. CLIENTES SEGUIMIENTO
                                     if "clientes_seguimiento" in data_restaurar:
                                         conn.execute(text("DELETE FROM clientes_seguimiento"))
                                         for r in data_restaurar["clientes_seguimiento"]:
-                                            conn.execute(text('''INSERT INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
-                                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''), (
-                                                r.get("id"), str(r.get("fecha_compra", "")), str(r.get("cliente_nombre", "")), str(r.get("cliente_celular", "")),
-                                                str(r.get("socio_vendedor", "")), str(r.get("perfume", "")), str(r.get("presentacion", "")), int(r.get("dias_estimados", 90)),
-                                                str(r.get("fecha_recordatorio", "")), str(r.get("estado", "Pendiente"))
-                                            ))
+                                            conn.execute(
+                                                text('''INSERT INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                                        VALUES (:id, :fecha_compra, :cliente_nombre, :cliente_celular, :socio_vendedor, :perfume, :presentacion, :dias_estimados, :fecha_recordatorio, :estado)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha_compra": str(r.get("fecha_compra", "")),
+                                                    "cliente_nombre": str(r.get("cliente_nombre", "")),
+                                                    "cliente_celular": str(r.get("cliente_celular", "")),
+                                                    "socio_vendedor": str(r.get("socio_vendedor", "")),
+                                                    "perfume": str(r.get("perfume", "")),
+                                                    "presentacion": str(r.get("presentacion", "")),
+                                                    "dias_estimados": int(r.get("dias_estimados", 90)),
+                                                    "fecha_recordatorio": str(r.get("fecha_recordatorio", "")),
+                                                    "estado": str(r.get("estado", "Pendiente"))
+                                                }
+                                            )
 
                                 st.success("🎉 ¡Todos los datos de la copia de seguridad se restauraron en Supabase sin errores!")
                                 st.rerun()

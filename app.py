@@ -276,7 +276,6 @@ def init_db():
             CREATE TABLE IF NOT EXISTS stock (
                 id SERIAL PRIMARY KEY,
                 nombre TEXT UNIQUE,
-                nombre_comercial TEXT DEFAULT '',
                 tipo TEXT,
                 genero TEXT DEFAULT 'Unisex',
                 capacidad_ml INTEGER DEFAULT 100,
@@ -293,12 +292,6 @@ def init_db():
                 imagen_url TEXT DEFAULT ''
             )
         '''))
-
-        # Intentar asegurar columna por si la tabla ya existía sin ella
-        try:
-            conn.execute(text('ALTER TABLE stock ADD COLUMN IF NOT EXISTS nombre_comercial TEXT DEFAULT ""'))
-        except Exception:
-            pass
 
         conn.execute(text('''
             CREATE TABLE IF NOT EXISTS historial (
@@ -381,16 +374,6 @@ def cargar_datos_stock():
             df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
         if "genero" in df.columns:
             df["genero"] = df["genero"].fillna("Unisex").replace("", "Unisex")
-        
-        if "nombre_comercial" in df.columns:
-            df["nombre_catalogo"] = df.apply(
-                lambda r: r["nombre_comercial"] if pd.notnull(r["nombre_comercial"]) and str(r["nombre_comercial"]).strip() != "" else r["nombre"], axis=1
-            )
-        else:
-            df["nombre_catalogo"] = df["nombre"]
-    else:
-        # Asegurar un DataFrame vacío con las columnas necesarias para evitar errores de renderizado
-        df = pd.DataFrame(columns=["id", "nombre", "nombre_comercial", "nombre_catalogo", "tipo", "genero", "capacidad_ml", "botellas_100ml_cerradas", "ml_disponibles_abiertos", "decants_10ml_preparados", "costo_usd", "estado"])
     return df
 
 def cargar_historial():
@@ -494,10 +477,9 @@ def generar_pdf_catalogo(df_cat):
         cap = limpiar_int_ml(row.get("capacidad_ml", 100), 100)
         gen = row.get("genero", "Unisex")
         tipo_str = f" ({row['tipo']})" if row.get("tipo") else ""
-        nombre_vis = row.get("nombre_catalogo", row["nombre"])
         
         data.append([
-            Paragraph(f"{nombre_vis}{tipo_str}", cell_bold),
+            Paragraph(f"{row['nombre']}{tipo_str}", cell_bold),
             Paragraph(gen, cell_style),
             Paragraph(f"{cap} ml", cell_style),
             Paragraph(row["estado"], cell_style),
@@ -817,7 +799,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base = df_cat_base[df_cat_base["estado"].isin(['En Stock', 'A pedido'])]
         
         df_cat_base["orden"] = df_cat_base["estado"].apply(lambda x: 0 if x == "En Stock" else 1)
-        df_cat_base = df_cat_base.sort_values(by=["orden", "nombre_catalogo"]).drop(columns=["orden"])
+        df_cat_base = df_cat_base.sort_values(by=["orden", "nombre"]).drop(columns=["orden"])
 
         df_cat_base["costo_usd"] = pd.to_numeric(df_cat_base["costo_usd"], errors='coerce').fillna(0.0)
         df_cat_base["capacidad_ml"] = df_cat_base["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
@@ -843,7 +825,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         
         perfumes_seleccionados = st.multiselect(
             "Selecciona uno o varios perfumes para consultar:",
-            options=df_cat_base["nombre_catalogo"].tolist(),
+            options=df_cat_base["nombre"].tolist(),
             placeholder="Escribe o selecciona perfumes..."
         )
         
@@ -884,7 +866,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             filtro_marca = st.selectbox("🏷️ Filtrar por Marca:", marcas_disponibles)
 
         if busq_cli:
-            df_cat_base = df_cat_base[df_cat_base["nombre_catalogo"].astype(str).str.contains(busq_cli, case=False, na=False)]
+            df_cat_base = df_cat_base[df_cat_base["nombre"].astype(str).str.contains(busq_cli, case=False, na=False)]
         if filtro_genero != "Todos los géneros":
             df_cat_base = df_cat_base[df_cat_base["genero"] == filtro_genero]
         if filtro_marca != "Todas las marcas / categorías":
@@ -911,7 +893,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
             estado_class = "perfume-badge"
             txt_sen = r['estado']
-            nombre_vis = r["nombre_catalogo"]
 
             col_card_1, col_card_2 = st.columns([1, 3])
             with col_card_1:
@@ -923,7 +904,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 else:
                     st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:
-                card_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="{estado_class}">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
+                card_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="{estado_class}">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
                 st.markdown(card_html, unsafe_allow_html=True)
     else:
         st.info("No hay fragancias disponibles en el catálogo.")
@@ -1018,7 +999,7 @@ else:
                     filtro_marca_adm = st.selectbox("🏷️ Marca:", marcas_adm)
 
                 if busqueda:
-                    df = df[df["nombre_catalogo"].astype(str).str.contains(busqueda, case=False, na=False)]
+                    df = df[df["nombre"].astype(str).str.contains(busqueda, case=False, na=False)]
                 if filtro_gen_adm != "Todos":
                     df = df[df["genero"] == filtro_gen_adm]
                 if filtro_estado:
@@ -1036,9 +1017,8 @@ else:
                         p_100_card = fmt_ars(r['precio_venta_100ml_ars'])
                         p_dec_card = fmt_ars(r['precio_venta_decant_10ml_ars'])
                         cap = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
-                        nombre_vis = r["nombre_catalogo"]
 
-                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{gen_str}{notas_str}<div style="margin-top: 8px;"><div><b>Frasco ({cap}ml):</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decants 10ml Listos:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un en stock)</small></div><div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
+                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{r["nombre"]}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{gen_str}{notas_str}<div style="margin-top: 8px;"><div><b>Frasco ({cap}ml):</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decants 10ml Listos:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un en stock)</small></div><div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
                         st.markdown(card_admin_html, unsafe_allow_html=True)
                 else:
                     df_display = df.copy()
@@ -1046,7 +1026,7 @@ else:
                     df_display["precio_10ml_formatted"] = df_display["precio_venta_decant_10ml_ars"].apply(fmt_ars)
                     
                     df_display = df_display.rename(columns={
-                        "id": "ID", "nombre_catalogo": "Perfume", "genero": "Género", "tipo": "Marca / Categoría", "capacidad_ml": "Vol (ml)", "estado": "Estado",
+                        "id": "ID", "nombre": "Perfume", "genero": "Género", "tipo": "Marca / Categoría", "capacidad_ml": "Vol (ml)", "estado": "Estado",
                         "botellas_100ml_cerradas": "Frascos", "decants_10ml_preparados": "Decants Stock", "costo_usd": "USD",
                         "precio_100ml_formatted": "Precio Frasco", "precio_10ml_formatted": "Precio 10ml"
                     })
@@ -1086,8 +1066,8 @@ else:
                 if "items_presupuesto" not in st.session_state:
                     st.session_state.items_presupuesto = []
                     
-                p_sel = st.selectbox("Perfume:", df_p["nombre_catalogo"].tolist())
-                p_data_temp = df_p[df_p["nombre_catalogo"] == p_sel].iloc[0]
+                p_sel = st.selectbox("Perfume:", df_p["nombre"].tolist())
+                p_data_temp = df_p[df_p["nombre"] == p_sel].iloc[0]
                 cap_temp = limpiar_int_ml(p_data_temp.get("capacidad_ml", 100), 100)
 
                 with st.form("form_item_presupuesto"):
@@ -1133,10 +1113,10 @@ else:
                     st.markdown("---")
                     st.subheader("🎁 Descuento General sobre la Compra")
                     
-                    tipo_descuento = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento en Lista (%)", "Porcentaje Personalizado (%)"], horizontal=True)
+                    tipo_descuento = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento in Lista (%)", "Porcentaje Personalizado (%)"], horizontal=True)
                     monto_desc_pres = 0.0
                     
-                    if tipo_descuento == "Descuento en Lista (%)":
+                    if tipo_descuento == "Descuento in Lista (%)":
                         pct_desc = st.selectbox("Selecciona Porcentaje:", [0, 5, 10, 15, 20], index=0)
                         monto_desc_pres = subtotal_pres * (pct_desc / 100.0)
                     elif tipo_descuento == "Monto Fijo Manual ($ ARS)":
@@ -1207,8 +1187,8 @@ else:
                 if "items_venta" not in st.session_state:
                     st.session_state.items_venta = []
 
-                p_sel_v = st.selectbox("Perfume a vender:", df_actual["nombre_catalogo"].tolist())
-                p_data_v = df_actual[df_actual["nombre_catalogo"] == p_sel_v].iloc[0]
+                p_sel_v = st.selectbox("Perfume a vender:", df_actual["nombre"].tolist())
+                p_data_v = df_actual[df_actual["nombre"] == p_sel_v].iloc[0]
                 cap_v = limpiar_int_ml(p_data_v.get("capacidad_ml", 100), 100)
 
                 with st.form("form_item_venta"):
@@ -1572,8 +1552,8 @@ else:
 
             with tab_oc1:
                 if not df_st_oc.empty:
-                    p_oc_sel = st.selectbox("Seleccionar perfume del Inventario:", df_st_oc["nombre_catalogo"].tolist())
-                    p_data_oc = df_st_oc[df_st_oc["nombre_catalogo"] == p_oc_sel].iloc[0]
+                    p_oc_sel = st.selectbox("Seleccionar perfume del Inventario:", df_st_oc["nombre"].tolist())
+                    p_data_oc = df_st_oc[df_st_oc["nombre"] == p_oc_sel].iloc[0]
                     cap_oc = limpiar_int_ml(p_data_oc.get("capacidad_ml", 100), 100)
 
                     with st.form("form_add_oc_stock", clear_on_submit=True):
@@ -1685,7 +1665,6 @@ else:
             st.header("➕ Cargar Producto Manual")
             with st.form("form_alta", clear_on_submit=True):
                 nombre = st.text_input("Nombre del perfume")
-                nombre_comercial = st.text_input("Nombre Comercial (Opcional - Visible en Catálogo):", placeholder="Ej: Nombre limpio sin 'nuevoo'")
                 
                 col_a1, col_a2, col_a3 = st.columns(3)
                 with col_a1:
@@ -1727,15 +1706,15 @@ else:
                                 UPDATE stock 
                                 SET tipo = :tipo, genero = :genero, capacidad_ml = :cap, botellas_100ml_cerradas = :bot, ml_disponibles_abiertos = :mlab, 
                                     decants_10ml_preparados = :dec, costo_usd = :costo, estado = :est,
-                                    notas_olfativas = :notas, imagen_url = :img, nombre_comercial = :nom_com
+                                    notas_olfativas = :notas, imagen_url = :img
                                 WHERE id = :idp
-                            ''', {"tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url, "nom_com": nombre_comercial.strip(), "idp": encontrado_id})
+                            ''', {"tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url, "idp": encontrado_id})
                             st.warning("Producto actualizado sin duplicar.")
                         else:
                             execute_query('''
-                                INSERT INTO stock (nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url)
-                                VALUES (:nom, :nom_com, :tipo, :genero, :cap, :bot, :mlab, :dec, :costo, :est, :notas, :img)
-                            ''', {"nom": nombre.strip(), "nom_com": nombre_comercial.strip(), "tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url})
+                                INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url)
+                                VALUES (:nom, :tipo, :genero, :cap, :bot, :mlab, :dec, :costo, :est, :notas, :img)
+                            ''', {"nom": nombre.strip(), "tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url})
                             st.success("¡Perfume guardado!")
                             
                         st.rerun()
@@ -1743,7 +1722,7 @@ else:
         # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
         elif seccion_admin == "📄 Cargar PDF Proveedor":
             st.header("📄 Procesar PDF Proveedor")
-            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, el sistema limpia automáticamente palabras basura (ej. 'nuevoo') y actualiza precios sin duplicar ni borrar tus nombres comerciales personalizados.")
+            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, si un perfume ya existe se conservará todo su stock y género, actualizando únicamente el costo USD.")
             
             with st.expander("⚙️ Ajustes de Precios Globales"):
                 nuevo_dolar = st.number_input("Dólar Sistema (ARS)", value=float(dolar_hoy))
@@ -1788,14 +1767,7 @@ else:
                             engine = get_engine()
                             with engine.begin() as conn:
                                 for _, r in df_pdf.iterrows():
-                                    nombre_crudo = str(r['nombre'])
-                                    
-                                    # Limpieza automática de palabras basura del proveedor
-                                    nombre_limpio = re.sub(r'(?i)\bnuevoo?\b', '', nombre_crudo)
-                                    nombre_limpio = re.sub(r'\s+', ' ', nombre_limpio).strip()
-                                    
-                                    nom_norm = normalizar_texto(nombre_limpio)
-                                    
+                                    nom_norm = normalizar_texto(r['nombre'])
                                     if nom_norm in dict_existentes:
                                         conn.execute(
                                             text("UPDATE stock SET costo_usd = :costo, capacidad_ml = :cap WHERE id = :id_prod"),
@@ -1804,13 +1776,13 @@ else:
                                     else:
                                         conn.execute(
                                             text('''
-                                                INSERT INTO stock (nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                                                VALUES (:nom, :nom_com, '', 'Unisex', :cap, 0, 0, 0, :costo, 'A pedido', '')
+                                                INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                                                VALUES (:nom, '', 'Unisex', :cap, 0, 0, 0, :costo, 'A pedido', '')
                                             '''),
-                                            {"nom": nombre_crudo, "nom_com": nombre_limpio, "cap": int(r['capacidad_ml']), "costo": float(r['costo_usd'])}
+                                            {"nom": str(r['nombre']), "cap": int(r['capacidad_ml']), "costo": float(r['costo_usd'])}
                                         )
 
-                            st.success("¡Sincronización completada sin duplicar productos!")
+                            st.success("¡Sincronización completada con éxito!")
                             st.rerun()
                     else:
                         st.warning("No se encontraron productos o precios válidos dentro del archivo PDF subido.")
@@ -1819,11 +1791,11 @@ else:
 
         # --- SECCIÓN: EDITAR / ELIMINAR ---
         elif seccion_admin == "✏️ Editar / Eliminar":
-            st.header("✏️ Editar Nombres, Estado, Género, Stock & Decants")
+            st.header("✏️ Editar Estado, Género, Stock & Decants")
             df_mod = cargar_datos_stock()
 
             if not df_mod.empty:
-                opciones_mod = [f"ID: {row['id']} | {row['nombre_catalogo']} (Prov: {row['nombre']})" for _, row in df_mod.iterrows()]
+                opciones_mod = [f"ID: {row['id']} | {row['nombre']}" for _, row in df_mod.iterrows()]
                 prod_sel = st.selectbox("Selecciona producto a editar:", opciones_mod)
                 id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
                 prod_data = df_mod[df_mod['id'] == id_mod].iloc[0]
@@ -1834,8 +1806,7 @@ else:
                 val_decants = int(prod_data.get('decants_10ml_preparados', 0))
 
                 with st.form("form_edicion"):
-                    nuevo_nombre = st.text_input("Nombre Interno (Proveedor)", value=prod_data['nombre'])
-                    nuevo_nombre_comercial = st.text_input("Nombre Comercial (Visible en Catálogo sin 'nuevoo')", value=str(prod_data.get('nombre_comercial', '')))
+                    nuevo_nombre = st.text_input("Nombre", value=prod_data['nombre'])
                     
                     col_ed1, col_ed2, col_ed3 = st.columns(3)
                     with col_ed1:
@@ -1870,11 +1841,11 @@ else:
                     if st.form_submit_button("💾 Guardar Cambios de Stock"):
                         execute_query('''
                             UPDATE stock
-                            SET nombre = :nom, nombre_comercial = :nom_com, tipo = :tipo, genero = :gen, capacidad_ml = :cap, estado = :est, costo_usd = :costo, margen_100ml_custom = :marg,
+                            SET nombre = :nom, tipo = :tipo, genero = :gen, capacidad_ml = :cap, estado = :est, costo_usd = :costo, margen_100ml_custom = :marg,
                                 botellas_100ml_cerradas = :nbot, ml_disponibles_abiertos = :nml, decants_10ml_preparados = :ndec, 
                                 notas_olfativas = :notas, imagen_url = :img
                             WHERE id = :idp
-                        ''', {"nom": nuevo_nombre, "nom_com": nuevo_nombre_comercial, "tipo": nuevo_tipo, "gen": nuevo_genero, "cap": int(nueva_capacidad), "est": nuevo_estado, "costo": nuevo_costo, "marg": nuevo_margen, "nbot": nbot, "nml": nml, "ndec": ndec, "notas": nuevas_notas, "img": nueva_img, "idp": id_mod})
+                        ''', {"nom": nuevo_nombre, "tipo": nuevo_tipo, "gen": nuevo_genero, "cap": int(nueva_capacidad), "est": nuevo_estado, "costo": nuevo_costo, "marg": nuevo_margen, "nbot": nbot, "nml": nml, "ndec": ndec, "notas": nuevas_notas, "img": nueva_img, "idp": id_mod})
                         st.success("¡Stock y datos del perfume actualizados correctamente!")
                         st.rerun()
 
@@ -2026,12 +1997,11 @@ else:
                                         conn.execute(text("DELETE FROM stock"))
                                         for r in data_restaurar["stock"]:
                                             conn.execute(
-                                                text('''INSERT INTO stock (id, nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
-                                                        VALUES (:id, :nombre, :nombre_comercial, :tipo, :genero, :capacidad_ml, :botellas_100ml_cerradas, :ml_disponibles_abiertos, :decants_10ml_preparados, :costo_usd, :margen_100ml_custom, :estado, :socio_asignado, :monto_senado_ars, :cliente_senado, :notas_olfativas, :imagen_url)'''),
+                                                text('''INSERT INTO stock (id, nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url)
+                                                        VALUES (:id, :nombre, :tipo, :genero, :capacidad_ml, :botellas_100ml_cerradas, :ml_disponibles_abiertos, :decants_10ml_preparados, :costo_usd, :margen_100ml_custom, :estado, :socio_asignado, :monto_senado_ars, :cliente_senado, :notas_olfativas, :imagen_url)'''),
                                                 {
                                                     "id": r.get("id"),
                                                     "nombre": str(r.get("nombre", "")),
-                                                    "nombre_comercial": str(r.get("nombre_comercial", r.get("nombre", ""))),
                                                     "tipo": str(r.get("tipo", "")),
                                                     "genero": str(r.get("genero", "Unisex")),
                                                     "capacidad_ml": int(r.get("capacidad_ml", 100)),

@@ -24,14 +24,14 @@ st.set_page_config(page_title="Storia Parfums", page_icon="🧪", layout="wide")
 st.title("🧪 Storia Parfums - Sistema de Inventario y Ventas")
 
 # ---------------------------------------------------------
-# CONEXIÓN A SUPABASE (VARIABLES SEPARADAS - POOLER)
+# CONEXIÓN A SUPABASE (NUEVO PROYECTO LIMPIO)
 # ---------------------------------------------------------
 try:
-    db_user = st.secrets["DB_USER"]
-    db_password = st.secrets["DB_PASSWORD"]
-    db_host = st.secrets["DB_HOST"]
-    db_port = st.secrets["DB_PORT"]
-    db_name = st.secrets["DB_NAME"]
+    db_user = "postgres.rkdxwdpytervrptqovxd"
+    db_password = "nvUqLofOvZAiRtmq"
+    db_host = "aws-0-us-west-2.pooler.supabase.com"
+    db_port = "6543"  # Puerto del pooler compatible con Streamlit
+    db_name = "postgres"
 
     DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
@@ -53,7 +53,7 @@ try:
         with engine.connect() as conn:
             return pd.read_sql(text(query), conn, params=params if params else None)
 
-    # Inicialización automática de todas las tablas del sistema
+    # Inicialización automática de todas las tablas en el proyecto nuevo
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(text('''
@@ -154,6 +154,6 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------
-# INTERFAZ PRINCIPAL DE LA APLICACIÓN
+# INTERFAZ PRINCIPAL
 # ---------------------------------------------------------
 st.info("El sistema está listo para operar.")

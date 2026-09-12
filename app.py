@@ -1769,13 +1769,18 @@ else:
                                 for _, r in df_pdf.iterrows():
                                     nom_norm = normalizar_texto(r['nombre'])
                                     if nom_norm in dict_existentes:
-                                        conn.execute(text("UPDATE stock SET costo_usd = %s, capacidad_ml = %s WHERE id = %s"),
-                                                     (float(r['costo_usd']), int(r['capacidad_ml']), int(dict_existentes[nom_norm])))
+                                        conn.execute(
+                                            text("UPDATE stock SET costo_usd = :costo, capacidad_ml = :cap WHERE id = :id_prod"),
+                                            {"costo": float(r['costo_usd']), "cap": int(r['capacidad_ml']), "id_prod": int(dict_existentes[nom_norm])}
+                                        )
                                     else:
-                                        conn.execute(text('''
-                                            INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
-                                            VALUES (%s, '', 'Unisex', %s, 0, 0, 0, %s, 'A pedido', '')
-                                        '''), (str(r['nombre']), int(r['capacidad_ml']), float(r['costo_usd'])))
+                                        conn.execute(
+                                            text('''
+                                                INSERT INTO stock (nombre, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado)
+                                                VALUES (:nom, '', 'Unisex', :cap, 0, 0, 0, :costo, 'A pedido', '')
+                                            '''),
+                                            {"nom": str(r['nombre']), "cap": int(r['capacidad_ml']), "costo": float(r['costo_usd'])}
+                                        )
 
                             st.success("¡Sincronización completada con éxito!")
                             st.rerun()

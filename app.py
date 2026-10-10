@@ -311,7 +311,7 @@ COLOR_GOLD_PDF = colors.HexColor("#D4AF37")
 # ---------------------------------------------------------
 def init_db():
     engine = get_engine()
-    with engine.begin() as conn:
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         conn.execute(text('''
             CREATE TABLE IF NOT EXISTS stock (
                 id SERIAL PRIMARY KEY,
@@ -362,6 +362,7 @@ def init_db():
                 costo_envase_decant_ars REAL
             )
         '''))
+        
         conn.execute(text('''
             INSERT INTO config (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars)
             VALUES (1, 1200.0, 30.0, 100.0, 800.0)

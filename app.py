@@ -143,22 +143,22 @@ def formatear_celular_wa(numero_str):
     return num
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS
+# ESTILOS CSS PERSONALIZADOS (ESTÉTICA DE LUJO Y MINIMALISMO)
 # ---------------------------------------------------------
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
 
     .stApp {
-        background-color: #F7F5F0 !important;
+        background-color: #FAF8F5 !important;
         color: #3A2E2B !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
 
     h1, h2, h3, h4 {
-        color: #5C4033 !important;
-        font-weight: 500 !important;
-        letter-spacing: 1.5px !important;
+        color: #4A3B32 !important;
+        font-weight: 300 !important;
+        letter-spacing: 2px !important;
     }
 
     p, span, label, div {
@@ -166,107 +166,116 @@ st.markdown("""
     }
 
     [data-testid="stMetricValue"] {
-        color: #8C6D53 !important;
+        color: #7A5C47 !important;
         font-size: 1.6rem !important;
-        font-weight: 600 !important;
+        font-weight: 400 !important;
     }
 
     [data-testid="stMetricLabel"] {
-        color: #5C4033 !important;
+        color: #4A3B32 !important;
         font-size: 0.85rem !important;
     }
 
+    /* Tarjetas tipo Escaparate de Lujo */
     .perfume-card {
         background-color: #FFFFFF !important;
-        border: 1px solid #E6DEC5 !important;
-        border-left: 3px solid #8C6D53 !important;
-        padding: 18px;
-        border-radius: 12px;
-        margin-bottom: 16px;
-        box-shadow: 0 4px 16px rgba(92, 64, 51, 0.08);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid #EFECE6 !important;
+        padding: 24px;
+        border-radius: 16px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 30px rgba(74, 59, 50, 0.04);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        text-align: center;
     }
     
     .perfume-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 22px rgba(92, 64, 51, 0.15);
+        transform: translateY(-4px);
+        box-shadow: 0 15px 40px rgba(74, 59, 50, 0.08);
     }
 
     .perfume-title {
         color: #2C2220 !important;
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin-bottom: 6px;
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-bottom: 8px;
+        letter-spacing: 0.5px;
     }
 
     .perfume-badge {
-        background-color: #F0EAD6 !important;
-        color: #5C4033 !important;
-        font-size: 0.75rem;
-        padding: 4px 10px;
+        background-color: #F7F5F0 !important;
+        color: #6B4F3B !important;
+        font-size: 0.7rem;
+        padding: 4px 12px;
         border-radius: 20px;
-        font-weight: 500;
+        font-weight: 400;
         display: inline-block;
-        margin-bottom: 8px;
-        margin-right: 6px;
-        border: 1px solid #D9CEB3;
+        margin-bottom: 10px;
+        letter-spacing: 1px;
+        border: 1px solid #E6DEC5;
     }
 
     .badge-genero {
-        background-color: #EFECE6 !important;
-        color: #4A3B32 !important;
-        border: 1px solid #DCD4C1;
+        background-color: #F7F5F0 !important;
+        color: #6B4F3B !important;
+        border: 1px solid #E6DEC5;
     }
 
     .perfume-notes {
-        color: #7A5C47 !important;
-        font-size: 0.85rem;
+        color: #8C7A6B !important;
+        font-size: 0.8rem;
         font-style: italic;
         margin-top: 6px;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
     }
 
     .perfume-price {
-        color: #5C4033 !important;
+        color: #4A3B32 !important;
         font-weight: 600;
-        font-size: 1.1rem;
+        font-size: 1.05rem;
+        letter-spacing: 0.5px;
     }
 
     .stock-badge-green {
         color: #2E7D32 !important;
-        font-size: 0.85rem;
-        font-weight: 600;
+        font-size: 0.8rem;
+        font-weight: 500;
     }
 
     .stock-badge-red {
-        color: #C62828 !important;
-        font-size: 0.85rem;
-        font-weight: 600;
+        color: #A34838 !important;
+        font-size: 0.8rem;
+        font-weight: 500;
     }
 
     .stImage > img {
-        max-height: 150px !important;
+        max-height: 180px !important;
         width: auto !important;
         object-fit: contain !important;
         margin: 0 auto !important;
         display: block !important;
-        border-radius: 8px !important;
+        border-radius: 12px !important;
         background-color: #FAF8F5 !important;
-        padding: 6px !important;
-        border: 1px solid #E6DEC5 !important;
+        padding: 10px !important;
+        transition: transform 0.3s ease;
+    }
+    
+    .stImage > img:hover {
+        transform: scale(1.03);
     }
 
-    /* Botones generales de Streamlit con texto BLANCO puro y alto contraste */
+    /* Botones refinados y minimalistas */
     .stButton>button {
-        background-color: #3F2A1D !important;
+        background-color: #4A3B32 !important;
         color: #FFFFFF !important;
-        font-weight: 600 !important;
-        border-radius: 8px !important;
-        border: 1px solid #5C4033 !important;
-        padding: 10px 20px !important;
-        transition: all 0.2s ease;
+        font-weight: 400 !important;
+        border-radius: 30px !important;
+        border: none !important;
+        padding: 10px 24px !important;
+        transition: all 0.3s ease;
         width: 100%;
-        box-shadow: 0 4px 12px rgba(63, 42, 29, 0.3);
+        letter-spacing: 1px;
+        font-size: 0.85rem;
+        box-shadow: 0 4px 15px rgba(74, 59, 50, 0.15);
     }
     
     .stButton>button p, .stButton>button span, .stButton>button div {
@@ -275,9 +284,8 @@ st.markdown("""
     }
 
     .stButton>button:hover {
-        background-color: #5C4033 !important;
-        color: #FFFFFF !important;
-        box-shadow: 0 6px 16px rgba(92, 64, 51, 0.4);
+        background-color: #6B4F3B !important;
+        box-shadow: 0 6px 20px rgba(74, 59, 50, 0.25);
     }
 
     .btn-whatsapp {
@@ -286,33 +294,34 @@ st.markdown("""
         color: white !important;
         text-align: center;
         padding: 11px;
-        border-radius: 8px;
-        font-weight: 600;
+        border-radius: 30px;
+        font-weight: 500;
         text-decoration: none;
         margin-bottom: 10px;
-        font-size: 0.9rem;
-        box-shadow: 0 4px 12px rgba(37, 211, 102, 0.25);
-        transition: background-color: 0.2s ease;
+        font-size: 0.85rem;
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 15px rgba(37, 211, 102, 0.2);
+        transition: background-color 0.2s ease;
     }
     .btn-whatsapp:hover {
         background-color: #1EBE57;
     }
 
     section[data-testid="stSidebar"] {
-        background-color: #EFECE6 !important;
-        border-right: 1px solid #DCD4C1;
+        background-color: #F2EFE9 !important;
+        border-right: 1px solid #E6DEC5;
     }
 
     .stTextInput input, .stNumberInput input, div[data-baseweb="select"] > div, div[data-baseweb="base-input"] {
         background-color: #FFFFFF !important;
         color: #3A2E2B !important;
         -webkit-text-fill-color: #3A2E2B !important;
-        border: 1px solid #D9CEB3 !important;
-        border-radius: 8px !important;
+        border: 1px solid #E6DEC5 !important;
+        border-radius: 12px !important;
     }
 
     div[data-baseweb="tag"] {
-        background-color: #F0EAD6 !important;
+        background-color: #EFECE6 !important;
         color: #5C4033 !important;
     }
     div[data-baseweb="tag"] span {
@@ -323,14 +332,15 @@ st.markdown("""
         color: #3A2E2B !important;
     }
 
-    /* Caja de indicador de carrito con texto blanco forzado */
+    /* Banner flotante de lujo sin recuadro pesado */
     .cart-indicator-box {
-        background: linear-gradient(135deg, #3F2A1D, #6B4F3B);
+        background: linear-gradient(135deg, #4A3B32, #2C2220);
         color: #FFFFFF !important;
-        padding: 14px 18px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        box-shadow: 0 6px 20px rgba(63,42,29,0.3);
+        padding: 16px 24px;
+        border-radius: 14px;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 30px rgba(44, 34, 32, 0.2);
+        letter-spacing: 0.5px;
     }
     .cart-indicator-box * {
         color: #FFFFFF !important;
@@ -887,9 +897,10 @@ if "socio_autenticado" not in st.session_state:
 if "carrito_cliente" not in st.session_state:
     st.session_state.carrito_cliente = []
 
-st.markdown("<h1 style='text-align: center; margin-bottom: 0px;'>S T O R I A</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #8C6D53; letter-spacing: 3px; font-size: 0.8rem;'>P A R F U M S</p>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #5C4033; font-style: italic; font-size: 0.9rem; margin-top: -10px; letter-spacing: 1px;'>CADA FRAGANCIA CUENTA UNA HISTORIA</p>", unsafe_allow_html=True)
+# Encabezadominimalista y elegante
+st.markdown("<h1 style='text-align: center; margin-bottom: 0px; font-weight: 300; letter-spacing: 6px;'>S T O R I A</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #8C6D53; letter-spacing: 4px; font-size: 0.75rem; text-transform: uppercase;'>P A R F U M S</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #7A5C47; font-style: italic; font-size: 0.85rem; margin-top: -8px; letter-spacing: 1px;'>Cada fragancia cuenta una historia</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = cargar_config()
@@ -907,7 +918,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
     # --- BARRA LATERAL IZQUIERDA (CARRITO) ---
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 🛒 Tu Carrito de Compras")
+        st.markdown("### 🛒 Tu Carrito")
         
         if st.session_state.carrito_cliente:
             total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
@@ -915,10 +926,10 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             for idx_c, item_c in enumerate(st.session_state.carrito_cliente):
                 subtot_item = item_c['precio'] * item_c['cantidad']
                 st.markdown(f"""
-                <div style="background-color: #FFFFFF; padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid #D9CEB3;">
+                <div style="background-color: #FFFFFF; padding: 10px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #E6DEC5;">
                     <b>{item_c['nombre']}</b><br>
                     <small>{item_c['presentacion']} (x{item_c['cantidad']})</small><br>
-                    <span style="color: #5C4033; font-weight: 600;">{fmt_ars(subtot_item)}</span>
+                    <span style="color: #6B4F3B; font-weight: 600;">{fmt_ars(subtot_item)}</span>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -931,7 +942,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             st.markdown("💬 **Enviar Pedido por WhatsApp:**")
 
             mensaje_whatsapp_partes = [f"- {i['nombre']} ({i['presentacion']}) x{i['cantidad']} : {fmt_ars(i['precio'] * i['cantidad'])}" for i in st.session_state.carrito_cliente]
-            detalles_pedido_str = "Hola! Armé mi pedido en el catálogo web de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
+            detalles_pedido_str = "Hola! Armé mi pedido en el escaparate digital de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
             msg_encoded_cart = urllib.parse.quote(detalles_pedido_str)
 
             st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
@@ -942,9 +953,9 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 st.session_state.carrito_cliente = []
                 st.rerun()
         else:
-            st.info("Tu carrito está vacío. Añade fragancias desde el catálogo.")
+            st.info("Tu carrito está vacío. Explora el escaparate.")
 
-    # --- GUÍA Y AVISO VISIBLE EN PANTALLA PRINCIPAL SI HAY PRODUCTOS ---
+    # --- BANNER DISCRETO Y ELEGANTE SI HAY PRODUCTOS ---
     total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
     if total_cant_items > 0:
         total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
@@ -952,42 +963,19 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         st.markdown(f"""
             <div class="cart-indicator-box">
                 <div>
-                    <span style="font-size: 1.15rem; font-weight: bold; color: #FFFFFF !important;">🛒 ¡Tienes {total_cant_items} producto(s) en tu carrito! ({fmt_ars(total_monto_carrito)})</span><br>
-                    <small style="color: #F0EAD6 !important;">👉 Abre el menú flotante en la esquina superior izquierda (flecha <b>></b>) para ver el detalle y pedir por WhatsApp.</small>
+                    <span style="font-size: 1.05rem; font-weight: 500; color: #FFFFFF !important;">✨ Tienes {total_cant_items} fragancia(s) seleccionada(s) ({fmt_ars(total_monto_carrito)})</span><br>
+                    <small style="color: #EFECE6 !important;">Abre el menú lateral izquierdo para ver el detalle y realizar tu pedido vía WhatsApp.</small>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-        with st.expander("👀 Hacer clic aquí para ver tu carrito y enviar por WhatsApp ahora mismo", expanded=False):
-            st.markdown("#### Resumen del pedido:")
-            for item_c in st.session_state.carrito_cliente:
-                st.write(f"- **{item_c['nombre']}** ({item_c['presentacion']}) x{item_c['cantidad']} : **{fmt_ars(item_c['precio'] * item_c['cantidad'])}**")
-            
-            st.markdown("---")
-            st.markdown("💬 **Enviar directamente a un socio:**")
-            mensaje_whatsapp_partes = [f"- {i['nombre']} ({i['presentacion']}) x{i['cantidad']} : {fmt_ars(i['precio'] * i['cantidad'])}" for i in st.session_state.carrito_cliente]
-            detalles_pedido_str = "Hola! Armé mi pedido en el catálogo web de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
-            msg_encoded_cart = urllib.parse.quote(detalles_pedido_str)
-
-            col_w1, col_w2, col_w3 = st.columns(3)
-            with col_w1:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
-            with col_w2:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián ({SOCIOS_ZONAS["Sebastián Agüero"]})</a>', unsafe_allow_html=True)
-            with col_w3:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco ({SOCIOS_ZONAS["Franco Navarrete"]})</a>', unsafe_allow_html=True)
-
-    st.header("📖 Catálogo de Fragancias")
-
+    # --- CARROUSEL / ESCAPARATE DESTACADO DE LUJO ---
     df_cat_base = cargar_datos_stock()
     
     if not df_cat_base.empty:
         df_cat_base["estado"] = df_cat_base["estado"].replace("Disponible en Proveedor", "A pedido")
         df_cat_base = df_cat_base[df_cat_base["estado"].isin(['En Stock', 'A pedido'])]
         
-        df_cat_base["orden"] = df_cat_base["estado"].apply(lambda x: 0 if x == "En Stock" else 1)
-        df_cat_base = df_cat_base.sort_values(by=["orden", "nombre_catalogo"]).drop(columns=["orden"])
-
         df_cat_base["costo_usd"] = pd.to_numeric(df_cat_base["costo_usd"], errors='coerce').fillna(0.0)
         df_cat_base["capacidad_ml"] = df_cat_base["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
         df_cat_base["decants_10ml_preparados"] = pd.to_numeric(df_cat_base["decants_10ml_preparados"], errors='coerce').fillna(0).astype(int)
@@ -1007,33 +995,66 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base["precio_decant_raw"] = (df_cat_base["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
         df_cat_base["precio_decant"] = df_cat_base["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
-        pdf_cat_bytes = generar_pdf_catalogo(df_cat_base)
-        st.download_button(
-            label="📥 Descargar Catálogo Completo (PDF)",
-            data=pdf_cat_bytes,
-            file_name=f"Catalogo_Storia_Parfums_{datetime.now().strftime('%d_%m_%Y')}.pdf",
-            mime="application/pdf"
-        )
+        # Sección de Destacados (Escaparate Principal de 3 Frascos)
+        st.markdown("<h3 style='text-align: center; font-weight: 300; letter-spacing: 3px; margin-bottom: 25px;'>E S C A P A R A T E &nbsp; D E &nbsp; L U J O</h3>", unsafe_allow_html=True)
+        
+        df_destacados = df_cat_base.head(3)
+        cols_dest = st.columns(len(df_destacados) if len(df_destacados) > 0 else 1)
+        
+        for idx_d, (_, r_dest) in enumerate(df_destacados.iterrows()):
+            with cols_dest[idx_d]:
+                nombre_vis_d = r_dest["nombre_catalogo"]
+                p_100_d = fmt_ars(r_dest['precio_100ml'])
+                cap_d = limpiar_int_ml(r_dest.get("capacidad_ml", 100), 100)
+                
+                if pd.notnull(r_dest.get("imagen_url")) and str(r_dest.get("imagen_url")).strip().startswith("http"):
+                    try:
+                        st.image(r_dest["imagen_url"], use_container_width=True)
+                    except Exception:
+                        st.markdown("<h1 style='text-align: center; color: #7A5C47;'>✨</h1>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h1 style='text-align: center; color: #7A5C47;'>✨</h1>", unsafe_allow_html=True)
+                
+                st.markdown(f"""
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.1rem; font-weight: 500; color: #2C2220; margin-top: 10px;">{nombre_vis_d}</div>
+                        <div style="color: #7A5C47; font-weight: 600; margin-bottom: 10px;">{p_100_d}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button(f"Añadir al Carrito", key=f"dest_add_{r_dest['id']}"):
+                    st.session_state.carrito_cliente.append({
+                        "nombre": nombre_vis_d,
+                        "presentacion": f"Frasco Cerrado ({cap_d}ml)",
+                        "cantidad": 1,
+                        "precio": r_dest['precio_100ml']
+                    })
+                    st.success("¡Agregado!")
+                    st.rerun()
+
         st.markdown("---")
         
+        # Filtros simplificados y elegantes
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
-            busq_cli = st.text_input("🔍 Buscar perfume:", placeholder="Ej. Khamrah, Club de Nuit...")
+            busq_cli = st.text_input("🔍 Buscar fragancia...", placeholder="Ej. Khamrah, Club de Nuit...")
         with col_f2:
-            filtro_genero = st.selectbox("👤 Filtrar por Género:", ["Todos los géneros", "Hombre", "Mujer", "Unisex"])
+            filtro_genero = st.selectbox("👤 Género:", ["Todos los géneros", "Hombre", "Mujer", "Unisex"])
         with col_f3:
-            marcas_disponibles = ["Todas las marcas / categorías"] + sorted(list(set(df_cat_base["tipo"].dropna().unique())))
-            filtro_marca = st.selectbox("🏷️ Filtrar por Marca:", marcas_disponibles)
+            marcas_disponibles = ["Todas las marcas"] + sorted(list(set(df_cat_base["tipo"].dropna().unique())))
+            filtro_marca = st.selectbox("🏷️ Marca / Casa:", marcas_disponibles)
 
         if busq_cli:
             df_cat_base = df_cat_base[df_cat_base["nombre_catalogo"].astype(str).str.contains(busq_cli, case=False, na=False)]
         if filtro_genero != "Todos los géneros":
             df_cat_base = df_cat_base[df_cat_base["genero"] == filtro_genero]
-        if filtro_marca != "Todas las marcas / categorías":
+        if filtro_marca != "Todas las marcas":
             df_cat_base = df_cat_base[df_cat_base["tipo"] == filtro_marca]
 
+        st.markdown("<br>", unsafe_allow_html=True)
+
         for _, r in df_cat_base.iterrows():
-            notas_html = f'<div class="perfume-notes">🌸 <b>Notas:</b> {r["notas_olfativas"]}</div>' if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
+            notas_html = f'<div class="perfume-notes">🌸 {r["notas_olfativas"]}</div>' if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
             tipo_html = f' • <span style="color:#8C6D53;">{r["tipo"]}</span>' if pd.notnull(r.get("tipo")) and str(r.get("tipo")).strip() != "" else ""
 
             gen_val = r.get("genero", "Unisex")
@@ -1053,7 +1074,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             else:
                 stock_dec_html = '<span class="stock-badge-red"> (A pedido)</span>'
 
-            estado_class = "perfume-badge"
             txt_sen = r['estado']
             nombre_vis = r["nombre_catalogo"]
 
@@ -1063,33 +1083,33 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                     try:
                         st.image(r["imagen_url"], use_container_width=True)
                     except Exception:
-                        st.markdown("<h2 style='text-align: center; color: #5C4033;'>✨</h2>", unsafe_allow_html=True)
+                        st.markdown("<h2 style='text-align: center; color: #7A5C47;'>✨</h2>", unsafe_allow_html=True)
                 else:
-                    st.markdown("<h2 style='text-align: center; color: #5C4033;'>✨</h2>", unsafe_allow_html=True)
+                    st.markdown("<h2 style='text-align: center; color: #7A5C47;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:
-                card_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="{estado_class}">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
+                card_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="perfume-badge">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}<div style="margin-top: 10px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
                 st.markdown(card_html, unsafe_allow_html=True)
 
                 col_btn_c1, col_btn_c2 = st.columns(2)
                 with col_btn_c1:
-                    if st.button(f"➕ Frasco {cap_ml}ml al Carrito", key=f"add_frasco_{r['id']}"):
+                    if st.button(f"Añadir Frasco {cap_ml}ml", key=f"add_frasco_{r['id']}"):
                         st.session_state.carrito_cliente.append({
                             "nombre": nombre_vis,
                             "presentacion": f"Frasco Cerrado ({cap_ml}ml)",
                             "cantidad": 1,
                             "precio": p_100ml_val
                         })
-                        st.success(f"¡{nombre_vis} ({cap_ml}ml) agregado al carrito!")
+                        st.success(f"¡{nombre_vis} ({cap_ml}ml) agregado!")
                         st.rerun()
                 with col_btn_c2:
-                    if st.button(f"➕ Decant 10ml al Carrito", key=f"add_decant_{r['id']}"):
+                    if st.button(f"Añadir Decant 10ml", key=f"add_decant_{r['id']}"):
                         st.session_state.carrito_cliente.append({
                             "nombre": nombre_vis,
                             "presentacion": "Decant 10ml",
                             "cantidad": 1,
                             "precio": p_decant_val
                         })
-                        st.success(f"¡{nombre_vis} (Decant 10ml) agregado al carrito!")
+                        st.success(f"¡{nombre_vis} (Decant 10ml) agregado!")
                         st.rerun()
     else:
         st.info("No hay fragancias disponibles en el catálogo.")

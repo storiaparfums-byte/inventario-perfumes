@@ -143,7 +143,7 @@ def formatear_celular_wa(numero_str):
     return num
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS (PALETA DE COLORES DE LA TARJETA)
+# ESTILOS CSS PERSONALIZADOS (CORRECCIÓN DE MODO OSCURO EN INPUTS)
 # ---------------------------------------------------------
 st.markdown("""
     <style>
@@ -286,7 +286,7 @@ st.markdown("""
         margin-bottom: 10px;
         font-size: 0.9rem;
         box-shadow: 0 4px 12px rgba(37, 211, 102, 0.25);
-        transition: background-color 0.2s ease;
+        transition: background-color: 0.2s ease;
     }
     .btn-whatsapp:hover {
         background-color: #1EBE57;
@@ -297,15 +297,27 @@ st.markdown("""
         border-right: 1px solid #DCD4C1;
     }
 
-    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
+    /* CORRECCIÓN ABSOLUTA PARA CAMPOS DE TEXTO, SELECTBOXES E INPUTS EN MODO OSCURO/CLARO */
+    .stTextInput input, .stNumberInput input, div[data-baseweb="select"] > div, div[data-baseweb="base-input"] {
         background-color: #FFFFFF !important;
         color: #3A2E2B !important;
+        -webkit-text-fill-color: #3A2E2B !important;
         border: 1px solid #D9CEB3 !important;
         border-radius: 8px !important;
     }
+
+    /* Forzar visibilidad del texto seleccionado en dropdowns y multiselects */
+    div[data-baseweb="tag"] {
+        background-color: #F0EAD6 !important;
+        color: #5C4033 !important;
+    }
+    div[data-baseweb="tag"] span {
+        color: #5C4033 !important;
+    }
     
-    .stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus {
-        border-color: #5C4033 !important;
+    /* Textos dentro de los menús desplegables */
+    li[role="option"] div {
+        color: #3A2E2B !important;
     }
     </style>
 """, unsafe_allow_html=True)

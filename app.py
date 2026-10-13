@@ -29,7 +29,7 @@ st.set_page_config(
 URL_CATALOGO_PUBLICO = "https://storiaparfums.streamlit.app"
 
 # ---------------------------------------------------------
-# DICCIONARIO DE SOCIOS, ZONAS Y WHATSAPP DIRECTOS (SEGÚN TARJETA)
+# DICCIONARIO DE SOCIOS, ZONAS Y WHATSAPP DIRECTOS
 # ---------------------------------------------------------
 USUARIOS_SOCIOS = {
     "Franco Navarrete": "41004368",
@@ -879,66 +879,51 @@ modo_acceso = st.sidebar.radio(
 )
 
 # ---------------------------------------------------------
-# MODO 1: CATÁLOGO PÚBLICO CLIENTE (ACCESO LIBRE)
+# MODO 1: CATÁLOGO PÚBLICO CLIENTE (OPCIÓN 3: BANNER / CARRITO DESPLEGABLE SUPERIOR)
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
-    # --- CARRITO Y ACCESO DIRECTO EN LA PARTE SUPERIOR DE LA BARRA LATERAL ---
-    with st.sidebar:
-        st.markdown("---")
-        total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
+    # --- OPCIÓN 3: PANEL DESPLEGABLE PRINCIPAL SUPERIOR ---
+    total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
+    
+    if total_cant_items > 0:
+        total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
         
-        if total_cant_items > 0:
-            st.markdown(f"""
-                <div style="background-color: #5C4033; color: white; padding: 12px; border-radius: 8px; text-align: center; margin-bottom: 10px;">
-                    <span style="font-size: 1.1rem; font-weight: bold; color: white;">🛒 ¡Tienes {total_cant_items} producto(s) en tu Carrito!</span><br>
-                    <small style="color: #E6DEC5;">Desplázate por esta barra lateral para ver tu total y enviar el pedido.</small>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <div style="background-color: #EFECE6; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #DCD4C1;">
-                    <span style="font-size: 0.95rem; font-weight: 600; color: #5C4033;">🛒 Tu Carrito está vacío</span><br>
-                    <small style="color: #7A5C47;">Agrega fragancias desde el catálogo para armar tu pedido.</small>
-                </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("### 🛒 Detalle del Carrito")
-        
-        if st.session_state.carrito_cliente:
-            total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
+        with st.expander(f"🛒 TU CARRITO DE COMPRAS ({total_cant_items} producto{'s' if total_cant_items > 1 else ''} - Total: {fmt_ars(total_monto_carrito)})", expanded=True):
+            st.markdown("#### Items agregados:")
             
             for idx_c, item_c in enumerate(st.session_state.carrito_cliente):
+                col_c1, col_c2, col_c3, col_c4 = st.columns([3, 2, 2, 1])
                 subtot_item = item_c['precio'] * item_c['cantidad']
-                st.markdown(f"""
-                <div style="background-color: #FFFFFF; padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid #D9CEB3;">
-                    <b>{item_c['nombre']}</b><br>
-                    <small>{item_c['presentacion']} (x{item_c['cantidad']})</small><br>
-                    <span style="color: #5C4033; font-weight: 600;">{fmt_ars(subtot_item)}</span>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                if st.button("❌ Quitar", key=f"btn_quitar_cart_{idx_c}"):
-                    st.session_state.carrito_cliente.pop(idx_c)
-                    st.rerun()
+                with col_c1:
+                    st.write(f"**{item_c['nombre']}**")
+                with col_c2:
+                    st.write(f"{item_c['presentacion']}")
+                with col_c3:
+                    st.write(f"x{item_c['cantidad']} = **{fmt_ars(subtot_item)}**")
+                with col_c4:
+                    if st.button("❌", key=f"btn_quitar_cart_{idx_c}"):
+                        st.session_state.carrito_cliente.pop(idx_c)
+                        st.rerun()
 
-            st.markdown(f"**Total Carrito: {fmt_ars(total_monto_carrito)}**")
             st.markdown("---")
-            st.markdown("💬 **Enviar Pedido por WhatsApp:**")
-
+            st.markdown("💬 **Envía tu pedido directamente por WhatsApp a uno de nuestros socios:**")
+            
             mensaje_whatsapp_partes = [f"- {i['nombre']} ({i['presentacion']}) x{i['cantidad']} : {fmt_ars(i['precio'] * i['cantidad'])}" for i in st.session_state.carrito_cliente]
             detalles_pedido_str = "Hola! Armé mi pedido en el catálogo web de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
             msg_encoded_cart = urllib.parse.quote(detalles_pedido_str)
 
-            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
-            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián ({SOCIOS_ZONAS["Sebastián Agüero"]})</a>', unsafe_allow_html=True)
-            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco ({SOCIOS_ZONAS["Franco Navarrete"]})</a>', unsafe_allow_html=True)
+            col_wa1, col_wa2, col_wa3 = st.columns(3)
+            with col_wa1:
+                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás<br><small>({SOCIOS_ZONAS["Tomás Cubillos"]})</small></a>', unsafe_allow_html=True)
+            with col_wa2:
+                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián<br><small>({SOCIOS_ZONAS["Sebastián Agüero"]})</small></a>', unsafe_allow_html=True)
+            with col_wa3:
+                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco<br><small>({SOCIOS_ZONAS["Franco Navarrete"]})</small></a>', unsafe_allow_html=True)
 
-            if st.button("🗑️ Vaciar Carrito"):
+            if st.button("🗑️ Vaciar Carrito Completo"):
                 st.session_state.carrito_cliente = []
                 st.rerun()
-        else:
-            st.info("Añade fragancias usando los botones del catálogo.")
 
     st.header("📖 Catálogo de Fragancias")
 
@@ -1396,7 +1381,7 @@ else:
                     
                     monto_desc_v = 0.0
                     if tipo_desc_v == "Monto Fijo en Pesos ($ ARS)":
-                        monto_desc_v = float(st.number_input("Monto in Pesos ($ ARS):", min_value=0.0, max_value=float(subtotal_v), value=0.0, step=500.0))
+                        monto_desc_v = float(st.number_input("Monto en Pesos ($ ARS):", min_value=0.0, max_value=float(subtotal_v), value=0.0, step=500.0))
                     elif tipo_desc_v == "Porcentaje Personalizado (%)":
                         pct_v = st.number_input("Porcentaje (%):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
                         monto_desc_v = subtotal_v * (pct_v / 100.0)

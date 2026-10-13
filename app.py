@@ -143,7 +143,7 @@ def formatear_celular_wa(numero_str):
     return num
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS (ESTÉTICA TARJETA & CONTROLES VISIBLES)
+# ESTILOS CSS PERSONALIZADOS
 # ---------------------------------------------------------
 st.markdown("""
     <style>
@@ -883,54 +883,46 @@ modo_acceso = st.sidebar.radio(
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
-    # --- BARRA SUPERIOR FIJA: CARRITO FLOTANTE / EXPANSOR ---
-    total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
-    total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
-
-    with st.expander(f"🛒 **Ver Carrito de Compras ({total_cant_items} ítems) — {fmt_ars(total_monto_carrito)}**", expanded=False):
+    # --- CARRITO INTEGRADO EN LA BARRA LATERAL (SIDEBAR) ---
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### 🛒 Tu Carrito de Compras")
+        
         if st.session_state.carrito_cliente:
-            st.markdown("#### Detalle de tu Pedido:")
+            total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
             
-            mensaje_whatsapp_partes = []
             for idx_c, item_c in enumerate(st.session_state.carrito_cliente):
                 subtot_item = item_c['precio'] * item_c['cantidad']
-                mensaje_whatsapp_partes.append(f"- {item_c['nombre']} ({item_c['presentacion']}) x{item_c['cantidad']} : {fmt_ars(subtot_item)}")
+                st.markdown(f"""
+                <div style="background-color: #FFFFFF; padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid #D9CEB3;">
+                    <b>{item_c['nombre']}</b><br>
+                    <small>{item_c['presentacion']} (x{item_c['cantidad']})</small><br>
+                    <span style="color: #5C4033; font-weight: 600;">{fmt_ars(subtot_item)}</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button("❌ Quitar", key=f"btn_quitar_cart_{idx_c}"):
+                    st.session_state.carrito_cliente.pop(idx_c)
+                    st.rerun()
 
-                col_ci1, col_ci2, col_ci3, col_ci4, col_ci5 = st.columns([3, 2, 1, 2, 1])
-                with col_ci1:
-                    st.write(f"**{item_c['nombre']}**")
-                with col_ci2:
-                    st.write(f"{item_c['presentacion']}")
-                with col_ci3:
-                    st.write(f"x{item_c['cantidad']}")
-                with col_ci4:
-                    st.write(fmt_ars(subtot_item))
-                with col_ci5:
-                    if st.button("❌ Quitar", key=f"btn_quitar_cart_{idx_c}"):
-                        st.session_state.carrito_cliente.pop(idx_c)
-                        st.rerun()
+            st.markdown(f"**Total Carrito: {fmt_ars(total_monto_carrito)}**")
+            st.markdown("---")
+            st.markdown("💬 **Enviar Pedido por WhatsApp:**")
 
-            st.markdown(f"### 💰 **Total Final: {fmt_ars(total_monto_carrito)}**")
-            st.markdown("<small>Elige el socio con el que deseas comunicarte para enviar tu pedido:</small>", unsafe_allow_html=True)
-
+            mensaje_whatsapp_partes = [f"- {i['nombre']} ({i['presentacion']}) x{i['cantidad']} : {fmt_ars(i['precio'] * i['cantidad'])}" for i in st.session_state.carrito_cliente]
             detalles_pedido_str = "Hola! Armé mi pedido en el catálogo web de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
             msg_encoded_cart = urllib.parse.quote(detalles_pedido_str)
 
-            col_cw1, col_cw2, col_cw3 = st.columns(3)
-            with col_cw1:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
-            with col_cw2:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián ({SOCIOS_ZONAS["Sebastián Agüero"]})</a>', unsafe_allow_html=True)
-            with col_cw3:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco ({SOCIOS_ZONAS["Franco Navarrete"]})</a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián ({SOCIOS_ZONAS["Sebastián Agüero"]})</a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco ({SOCIOS_ZONAS["Franco Navarrete"]})</a>', unsafe_allow_html=True)
 
             if st.button("🗑️ Vaciar Carrito"):
                 st.session_state.carrito_cliente = []
                 st.rerun()
         else:
-            st.info("Tu carrito está vacío. Agrega fragancias desde el catálogo para armar tu pedido.")
+            st.info("Tu carrito está vacío. Añade fragancias desde el catálogo.")
 
-    st.markdown("---")
     st.header("📖 Catálogo de Fragancias")
 
     df_cat_base = cargar_datos_stock()

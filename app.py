@@ -883,10 +883,27 @@ modo_acceso = st.sidebar.radio(
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
-    # --- CARRITO INTEGRADO EN LA BARRA LATERAL (SIDEBAR) ---
+    # --- CARRITO Y ACCESO DIRECTO EN LA PARTE SUPERIOR DE LA BARRA LATERAL ---
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 🛒 Tu Carrito de Compras")
+        total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
+        
+        if total_cant_items > 0:
+            st.markdown(f"""
+                <div style="background-color: #5C4033; color: white; padding: 12px; border-radius: 8px; text-align: center; margin-bottom: 10px;">
+                    <span style="font-size: 1.1rem; font-weight: bold; color: white;">🛒 ¡Tienes {total_cant_items} producto(s) en tu Carrito!</span><br>
+                    <small style="color: #E6DEC5;">Desplázate por esta barra lateral para ver tu total y enviar el pedido.</small>
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+                <div style="background-color: #EFECE6; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #DCD4C1;">
+                    <span style="font-size: 0.95rem; font-weight: 600; color: #5C4033;">🛒 Tu Carrito está vacío</span><br>
+                    <small style="color: #7A5C47;">Agrega fragancias desde el catálogo para armar tu pedido.</small>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("### 🛒 Detalle del Carrito")
         
         if st.session_state.carrito_cliente:
             total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
@@ -921,7 +938,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 st.session_state.carrito_cliente = []
                 st.rerun()
         else:
-            st.info("Tu carrito está vacío. Añade fragancias desde el catálogo.")
+            st.info("Añade fragancias usando los botones del catálogo.")
 
     st.header("📖 Catálogo de Fragancias")
 
@@ -1379,7 +1396,7 @@ else:
                     
                     monto_desc_v = 0.0
                     if tipo_desc_v == "Monto Fijo en Pesos ($ ARS)":
-                        monto_desc_v = float(st.number_input("Monto en Pesos ($ ARS):", min_value=0.0, max_value=float(subtotal_v), value=0.0, step=500.0))
+                        monto_desc_v = float(st.number_input("Monto in Pesos ($ ARS):", min_value=0.0, max_value=float(subtotal_v), value=0.0, step=500.0))
                     elif tipo_desc_v == "Porcentaje Personalizado (%)":
                         pct_v = st.number_input("Porcentaje (%):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
                         monto_desc_v = subtotal_v * (pct_v / 100.0)

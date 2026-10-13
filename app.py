@@ -334,10 +334,25 @@ def init_db():
             )
         '''))
 
-        try:
-            conn.execute(text('ALTER TABLE stock ADD COLUMN IF NOT EXISTS nombre_comercial TEXT DEFAULT ""'))
-        except Exception:
-            pass
+        columnas_a_verificar = [
+            ("nombre_comercial", "TEXT DEFAULT ''"),
+            ("genero", "TEXT DEFAULT 'Unisex'"),
+            ("capacidad_ml", "INTEGER DEFAULT 100"),
+            ("botellas_100ml_cerradas", "INTEGER DEFAULT 0"),
+            ("ml_disponibles_abiertos", "INTEGER DEFAULT 0"),
+            ("decants_10ml_preparados", "INTEGER DEFAULT 0"),
+            ("costo_usd", "REAL DEFAULT 0.0"),
+            ("margen_100ml_custom", "REAL"),
+            ("estado", "TEXT DEFAULT 'A pedido'"),
+            ("notas_olfativas", "TEXT DEFAULT ''"),
+            ("imagen_url", "TEXT DEFAULT ''")
+        ]
+
+        for col_nombre, col_tipo in columnas_a_verificar:
+            try:
+                conn.execute(text(f'ALTER TABLE stock ADD COLUMN IF NOT EXISTS {col_nombre} {col_tipo}'))
+            except Exception:
+                pass
 
         conn.execute(text('''
             CREATE TABLE IF NOT EXISTS historial (

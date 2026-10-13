@@ -29,7 +29,7 @@ st.set_page_config(
 URL_CATALOGO_PUBLICO = "https://storiaparfums.streamlit.app"
 
 # ---------------------------------------------------------
-# DICCIONARIO DE SOCIOS, ZONAS Y WHATSAPP DIRECTOS
+# DICCIONARIO DE SOCIOS, ZONAS Y WHATSAPP DIRECTOS (SEGÚN TARJETA)
 # ---------------------------------------------------------
 USUARIOS_SOCIOS = {
     "Franco Navarrete": "41004368",
@@ -314,19 +314,6 @@ st.markdown("""
     
     li[role="option"] div {
         color: #3A2E2B !important;
-    }
-
-    /* Caja de aviso flotante para guiar al usuario hacia el carrito izquierdo */
-    .cart-indicator-box {
-        background: linear-gradient(135deg, #5C4033, #8C6D53);
-        color: white !important;
-        padding: 14px 18px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        box-shadow: 0 6px 20px rgba(92,64,51,0.25);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -896,7 +883,7 @@ modo_acceso = st.sidebar.radio(
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
-    # --- BARRA LATERAL IZQUIERDA (CARRITO) ---
+    # --- BARRA LATERAL (SIDEBAR) ---
     with st.sidebar:
         st.markdown("---")
         st.markdown("### 🛒 Tu Carrito de Compras")
@@ -936,40 +923,19 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         else:
             st.info("Tu carrito está vacío. Añade fragancias desde el catálogo.")
 
-    # --- GUÍA Y AVISO VISIBLE EN PANTALLA PRINCIPAL SI HAY PRODUCTOS ---
+    # --- AVISO VISIBLE EN PANTALLA PRINCIPAL SI TIENE PRODUCTOS ---
     total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
     if total_cant_items > 0:
         total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
         
-        # Banner informativo con indicador hacia la izquierda
-        st.markdown(f"""
-            <div class="cart-indicator-box">
-                <div>
-                    <span style="font-size: 1.15rem; font-weight: bold;">🛒 ¡Tienes {total_cant_items} producto(s) en tu carrito! ({fmt_ars(total_monto_carrito)})</span><br>
-                    <small style="color: #E6DEC5;">👉 Abre el menú flotante en la esquina superior izquierda (flecha <b>></b>) para ver el detalle y pedir por WhatsApp.</small>
+        with st.container():
+            st.markdown(f"""
+                <div style="background-color: #5C4033; color: white; padding: 16px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(92,64,51,0.2);">
+                    <h3 style="color: white !important; margin: 0 0 8px 0; font-size: 1.2rem;">🛒 ¡Tienes {total_cant_items} producto(s) en tu Carrito!</h3>
+                    <p style="color: #E6DEC5 !important; margin: 0 0 12px 0; font-size: 0.95rem;">Total acumulado aproximado: <b>{fmt_ars(total_monto_carrito)}</b></p>
+                    <p style="color: #FFFFFF !important; margin: 0; font-size: 0.85rem; font-style: italic;">👉 Despliega la <b>barra lateral izquierda</b> (o haz clic en la flecha <b>></b> arriba a la izquierda) para ver el detalle completo de tus ítems y enviar el pedido directamente por WhatsApp a los socios.</p>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Desplegable auxiliar inmediato por si el usuario prefiere ver/enviar desde el centro sin abrir la barra
-        with st.expander("👀 Hacer clic aquí para ver tu carrito y enviar por WhatsApp ahora mismo", expanded=False):
-            st.markdown("#### Resumen del pedido:")
-            for item_c in st.session_state.carrito_cliente:
-                st.write(f"- **{item_c['nombre']}** ({item_c['presentacion']}) x{item_c['cantidad']} : **{fmt_ars(item_c['precio'] * item_c['cantidad'])}**")
-            
-            st.markdown("---")
-            st.markdown("💬 **Enviar directamente a un socio:**")
-            mensaje_whatsapp_partes = [f"- {i['nombre']} ({i['presentacion']}) x{i['cantidad']} : {fmt_ars(i['precio'] * i['cantidad'])}" for i in st.session_state.carrito_cliente]
-            detalles_pedido_str = "Hola! Armé mi pedido en el catálogo web de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
-            msg_encoded_cart = urllib.parse.quote(detalles_pedido_str)
-
-            col_w1, col_w2, col_w3 = st.columns(3)
-            with col_w1:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
-            with col_w2:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián ({SOCIOS_ZONAS["Sebastián Agüero"]})</a>', unsafe_allow_html=True)
-            with col_w3:
-                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco ({SOCIOS_ZONAS["Franco Navarrete"]})</a>', unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     st.header("📖 Catálogo de Fragancias")
 
@@ -2209,8 +2175,22 @@ else:
 
                                     if "historial" in data_restaurar:
                                         conn.execute(text("DELETE FROM historial"))
-                                        for r in data_restaur_ar["historial"] if "historial" in data_restaurar else []: # type: ignore
-                                            pass
+                                        for r in data_restaurar["historial"]:
+                                            conn.execute(
+                                                text('''INSERT INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                                        VALUES (:id, :fecha, :perfume, :socio, :tipo_movimiento, :monto_ingreso_ars, :id_producto, :presentacion, :cantidad)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha": str(r.get("fecha", "")),
+                                                    "perfume": str(r.get("perfume", "")),
+                                                    "socio": str(r.get("socio", "")),
+                                                    "tipo_movimiento": str(r.get("tipo_movimiento", "")),
+                                                    "monto_ingreso_ars": float(r.get("monto_ingreso_ars", 0.0)),
+                                                    "id_producto": int(r.get("id_producto", 0)),
+                                                    "presentacion": str(r.get("presentacion", "")),
+                                                    "cantidad": int(r.get("cantidad", 1))
+                                                }
+                                            )
 
                                     if "egresos" in data_restaurar:
                                         conn.execute(text("DELETE FROM egresos"))
@@ -2251,6 +2231,6 @@ else:
                                 st.success("🎉 ¡Todos los datos de la copia de seguridad se restauraron en Supabase sin errores!")
                                 st.rerun()
                             else:
-                                st.warning("Marca la casilla para confirmar.")
+                                st.warning("Asigna una marca en la casilla de confirmación.")
                     except Exception as err_bk:
                         st.error(f"Error restaurando la copia: {err_bk}")

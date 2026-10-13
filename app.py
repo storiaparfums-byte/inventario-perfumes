@@ -323,16 +323,18 @@ st.markdown("""
         color: #3A2E2B !important;
     }
 
+    /* Caja de indicador de carrito con texto blanco forzado */
     .cart-indicator-box {
         background: linear-gradient(135deg, #3F2A1D, #6B4F3B);
-        color: white !important;
+        color: #FFFFFF !important;
         padding: 14px 18px;
         border-radius: 10px;
         margin-bottom: 20px;
         box-shadow: 0 6px 20px rgba(63,42,29,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+    }
+    .cart-indicator-box * {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
     }
     </style>
 """, unsafe_allow_html=True)

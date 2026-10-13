@@ -29,7 +29,7 @@ st.set_page_config(
 URL_CATALOGO_PUBLICO = "https://storiaparfums.streamlit.app"
 
 # ---------------------------------------------------------
-# DICCIONARIO DE SOCIOS, ZONAS Y WHATSAPP DIRECTOS (SEGÚN TARJETA)
+# DICCIONARIO DE SOCIOS, ZONAS Y WHATSAPP DIRECTOS
 # ---------------------------------------------------------
 USUARIOS_SOCIOS = {
     "Franco Navarrete": "41004368",
@@ -256,21 +256,28 @@ st.markdown("""
         border: 1px solid #E6DEC5 !important;
     }
 
+    /* Botones generales de Streamlit con texto BLANCO puro y alto contraste */
     .stButton>button {
-        background-color: #5C4033 !important;
+        background-color: #3F2A1D !important;
         color: #FFFFFF !important;
         font-weight: 600 !important;
         border-radius: 8px !important;
-        border: none !important;
+        border: 1px solid #5C4033 !important;
         padding: 10px 20px !important;
         transition: all 0.2s ease;
         width: 100%;
-        box-shadow: 0 4px 12px rgba(92, 64, 51, 0.2);
+        box-shadow: 0 4px 12px rgba(63, 42, 29, 0.3);
     }
     
+    .stButton>button p, .stButton>button span, .stButton>button div {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
+
     .stButton>button:hover {
-        background-color: #7A5C47 !important;
-        box-shadow: 0 6px 16px rgba(92, 64, 51, 0.35);
+        background-color: #5C4033 !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 6px 16px rgba(92, 64, 51, 0.4);
     }
 
     .btn-whatsapp {
@@ -314,6 +321,18 @@ st.markdown("""
     
     li[role="option"] div {
         color: #3A2E2B !important;
+    }
+
+    .cart-indicator-box {
+        background: linear-gradient(135deg, #3F2A1D, #6B4F3B);
+        color: white !important;
+        padding: 14px 18px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 6px 20px rgba(63,42,29,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -883,7 +902,7 @@ modo_acceso = st.sidebar.radio(
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
-    # --- BARRA LATERAL (SIDEBAR) ---
+    # --- BARRA LATERAL IZQUIERDA (CARRITO) ---
     with st.sidebar:
         st.markdown("---")
         st.markdown("### 🛒 Tu Carrito de Compras")
@@ -923,19 +942,38 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         else:
             st.info("Tu carrito está vacío. Añade fragancias desde el catálogo.")
 
-    # --- AVISO VISIBLE EN PANTALLA PRINCIPAL SI TIENE PRODUCTOS ---
+    # --- GUÍA Y AVISO VISIBLE EN PANTALLA PRINCIPAL SI HAY PRODUCTOS ---
     total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
     if total_cant_items > 0:
         total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
         
-        with st.container():
-            st.markdown(f"""
-                <div style="background-color: #5C4033; color: white; padding: 16px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(92,64,51,0.2);">
-                    <h3 style="color: white !important; margin: 0 0 8px 0; font-size: 1.2rem;">🛒 ¡Tienes {total_cant_items} producto(s) en tu Carrito!</h3>
-                    <p style="color: #E6DEC5 !important; margin: 0 0 12px 0; font-size: 0.95rem;">Total acumulado aproximado: <b>{fmt_ars(total_monto_carrito)}</b></p>
-                    <p style="color: #FFFFFF !important; margin: 0; font-size: 0.85rem; font-style: italic;">👉 Despliega la <b>barra lateral izquierda</b> (o haz clic en la flecha <b>></b> arriba a la izquierda) para ver el detalle completo de tus ítems y enviar el pedido directamente por WhatsApp a los socios.</p>
+        st.markdown(f"""
+            <div class="cart-indicator-box">
+                <div>
+                    <span style="font-size: 1.15rem; font-weight: bold; color: #FFFFFF !important;">🛒 ¡Tienes {total_cant_items} producto(s) en tu carrito! ({fmt_ars(total_monto_carrito)})</span><br>
+                    <small style="color: #F0EAD6 !important;">👉 Abre el menú flotante en la esquina superior izquierda (flecha <b>></b>) para ver el detalle y pedir por WhatsApp.</small>
                 </div>
-            """, unsafe_allow_html=True)
+            </div>
+        """, unsafe_allow_html=True)
+
+        with st.expander("👀 Hacer clic aquí para ver tu carrito y enviar por WhatsApp ahora mismo", expanded=False):
+            st.markdown("#### Resumen del pedido:")
+            for item_c in st.session_state.carrito_cliente:
+                st.write(f"- **{item_c['nombre']}** ({item_c['presentacion']}) x{item_c['cantidad']} : **{fmt_ars(item_c['precio'] * item_c['cantidad'])}**")
+            
+            st.markdown("---")
+            st.markdown("💬 **Enviar directamente a un socio:**")
+            mensaje_whatsapp_partes = [f"- {i['nombre']} ({i['presentacion']}) x{i['cantidad']} : {fmt_ars(i['precio'] * i['cantidad'])}" for i in st.session_state.carrito_cliente]
+            detalles_pedido_str = "Hola! Armé mi pedido en el catálogo web de STORIA PARFUMS:\n" + "\n".join(mensaje_whatsapp_partes) + f"\n\n*TOTAL APROXIMADO: {fmt_ars(total_monto_carrito)}*\n¿Me confirman disponibilidad y seña?"
+            msg_encoded_cart = urllib.parse.quote(detalles_pedido_str)
+
+            col_w1, col_w2, col_w3 = st.columns(3)
+            with col_w1:
+                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Tomás Cubillos"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Tomás ({SOCIOS_ZONAS["Tomás Cubillos"]})</a>', unsafe_allow_html=True)
+            with col_w2:
+                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Sebastián Agüero"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Sebastián ({SOCIOS_ZONAS["Sebastián Agüero"]})</a>', unsafe_allow_html=True)
+            with col_w3:
+                st.markdown(f'<a href="https://wa.me/{SOCIOS_WHATSAPP["Franco Navarrete"]}?text={msg_encoded_cart}" target="_blank" class="btn-whatsapp">💬 Franco ({SOCIOS_ZONAS["Franco Navarrete"]})</a>', unsafe_allow_html=True)
 
     st.header("📖 Catálogo de Fragancias")
 
@@ -2231,6 +2269,6 @@ else:
                                 st.success("🎉 ¡Todos los datos de la copia de seguridad se restauraron en Supabase sin errores!")
                                 st.rerun()
                             else:
-                                st.warning("Asigna una marca en la casilla de confirmación.")
+                                st.warning("Marca la casilla para confirmar.")
                     except Exception as err_bk:
                         st.error(f"Error restaurando la copia: {err_bk}")

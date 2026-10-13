@@ -37,7 +37,6 @@ USUARIOS_SOCIOS = {
     "Tomás Cubillos": "95113521"
 }
 
-# Asignados según las zonas de la tarjeta oficial
 SOCIOS_WHATSAPP = {
     "Franco Navarrete": "5492613350949", # Guaymallén - Godoy Cruz
     "Sebastián Agüero": "5492615913895", # Luján - Godoy Cruz
@@ -144,65 +143,66 @@ def formatear_celular_wa(numero_str):
     return num
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS (ESTÉTICA MINIMALISTA Y ELEGANTE)
+# ESTILOS CSS PERSONALIZADOS (PALETA DE COLORES DE LA TARJETA)
 # ---------------------------------------------------------
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
 
+    /* Fondo general inspirado en el tono arena/beige suave de la tarjeta */
     .stApp {
-        background-color: #1C1412 !important;
-        color: #F4F1EA !important;
+        background-color: #F7F5F0 !important;
+        color: #3A2E2B !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
 
     h1, h2, h3, h4 {
-        color: #D4AF37 !important;
-        font-weight: 400 !important;
+        color: #5C4033 !important;
+        font-weight: 500 !important;
         letter-spacing: 1.5px !important;
     }
 
     p, span, label, div {
-        color: #F4F1EA;
+        color: #3A2E2B;
     }
 
     [data-testid="stMetricValue"] {
-        color: #E5C158 !important;
+        color: #8C6D53 !important;
         font-size: 1.6rem !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
     }
 
     [data-testid="stMetricLabel"] {
-        color: #C5A059 !important;
+        color: #5C4033 !important;
         font-size: 0.85rem !important;
     }
 
     .perfume-card {
-        background-color: #241A17 !important;
-        border: 1px solid #362622 !important;
-        border-left: 3px solid #D4AF37 !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E6DEC5 !important;
+        border-left: 3px solid #8C6D53 !important;
         padding: 18px;
         border-radius: 12px;
         margin-bottom: 16px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 4px 16px rgba(92, 64, 51, 0.08);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     
     .perfume-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 12px 30px rgba(212, 175, 55, 0.1);
+        box-shadow: 0 8px 22px rgba(92, 64, 51, 0.15);
     }
 
     .perfume-title {
-        color: #FFFFFF !important;
+        color: #2C2220 !important;
         font-size: 1.25rem;
         font-weight: 600;
         margin-bottom: 6px;
     }
 
     .perfume-badge {
-        background-color: #362622 !important;
-        color: #D4AF37 !important;
+        background-color: #F0EAD6 !important;
+        color: #5C4033 !important;
         font-size: 0.75rem;
         padding: 4px 10px;
         border-radius: 20px;
@@ -210,17 +210,17 @@ st.markdown("""
         display: inline-block;
         margin-bottom: 8px;
         margin-right: 6px;
-        border: 1px solid #4A3530;
+        border: 1px solid #D9CEB3;
     }
 
     .badge-genero {
-        background-color: #2D2320 !important;
-        color: #E2E8F0 !important;
-        border: 1px solid #3D2B27;
+        background-color: #EFECE6 !important;
+        color: #4A3B32 !important;
+        border: 1px solid #DCD4C1;
     }
 
     .perfume-notes {
-        color: #C5A059 !important;
+        color: #7A5C47 !important;
         font-size: 0.85rem;
         font-style: italic;
         margin-top: 6px;
@@ -228,19 +228,19 @@ st.markdown("""
     }
 
     .perfume-price {
-        color: #E5C158 !important;
+        color: #5C4033 !important;
         font-weight: 600;
         font-size: 1.1rem;
     }
 
     .stock-badge-green {
-        color: #4EAD5B !important;
+        color: #2E7D32 !important;
         font-size: 0.85rem;
         font-weight: 600;
     }
 
     .stock-badge-red {
-        color: #E55353 !important;
+        color: #C62828 !important;
         font-size: 0.85rem;
         font-weight: 600;
     }
@@ -252,26 +252,26 @@ st.markdown("""
         margin: 0 auto !important;
         display: block !important;
         border-radius: 8px !important;
-        background-color: #17100E !important;
+        background-color: #FAF8F5 !important;
         padding: 6px !important;
-        border: 1px solid #362622 !important;
+        border: 1px solid #E6DEC5 !important;
     }
 
     .stButton>button {
-        background-color: #D4AF37 !important;
-        color: #1C1412 !important;
+        background-color: #5C4033 !important;
+        color: #FFFFFF !important;
         font-weight: 600 !important;
         border-radius: 8px !important;
         border: none !important;
         padding: 10px 20px !important;
         transition: all 0.2s ease;
         width: 100%;
-        box-shadow: 0 4px 12px rgba(212, 175, 55, 0.2);
+        box-shadow: 0 4px 12px rgba(92, 64, 51, 0.2);
     }
     
     .stButton>button:hover {
-        background-color: #E5C158 !important;
-        box-shadow: 0 6px 16px rgba(212, 175, 55, 0.35);
+        background-color: #7A5C47 !important;
+        box-shadow: 0 6px 16px rgba(92, 64, 51, 0.35);
     }
 
     .btn-whatsapp {
@@ -293,25 +293,25 @@ st.markdown("""
     }
 
     section[data-testid="stSidebar"] {
-        background-color: #17100E !important;
-        border-right: 1px solid #291D1A;
+        background-color: #EFECE6 !important;
+        border-right: 1px solid #DCD4C1;
     }
 
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
-        background-color: #241A17 !important;
-        color: #F4F1EA !important;
-        border: 1px solid #3D2B27 !important;
+        background-color: #FFFFFF !important;
+        color: #3A2E2B !important;
+        border: 1px solid #D9CEB3 !important;
         border-radius: 8px !important;
     }
     
     .stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus {
-        border-color: #D4AF37 !important;
+        border-color: #5C4033 !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-COLOR_BG_PDF = colors.HexColor("#1C1412")
-COLOR_GOLD_PDF = colors.HexColor("#D4AF37")
+COLOR_BG_PDF = colors.HexColor("#3A2E2B")
+COLOR_GOLD_PDF = colors.HexColor("#8C6D53")
 
 # ---------------------------------------------------------
 # INICIALIZACIÓN DE TABLAS EN SUPABASE
@@ -856,8 +856,8 @@ if "socio_autenticado" not in st.session_state:
     st.session_state.socio_autenticado = None
 
 st.markdown("<h1 style='text-align: center; margin-bottom: 0px;'>S T O R I A</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #C5A059; letter-spacing: 3px; font-size: 0.8rem;'>P A R F U M S</p>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #F4F1EA; font-style: italic; font-size: 0.9rem; margin-top: -10px; letter-spacing: 1px;'>CADA FRAGANCIA CUENTA UNA HISTORIA</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #8C6D53; letter-spacing: 3px; font-size: 0.8rem;'>P A R F U M S</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #5C4033; font-style: italic; font-size: 0.9rem; margin-top: -10px; letter-spacing: 1px;'>CADA FRAGANCIA CUENTA UNA HISTORIA</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase = cargar_config()
@@ -955,7 +955,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
         for _, r in df_cat_base.iterrows():
             notas_html = f'<div class="perfume-notes">🌸 <b>Notas:</b> {r["notas_olfativas"]}</div>' if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
-            tipo_html = f' • <span style="color:#C5A059;">{r["tipo"]}</span>' if pd.notnull(r.get("tipo")) and str(r.get("tipo")).strip() != "" else ""
+            tipo_html = f' • <span style="color:#8C6D53;">{r["tipo"]}</span>' if pd.notnull(r.get("tipo")) and str(r.get("tipo")).strip() != "" else ""
 
             gen_val = r.get("genero", "Unisex")
             icon_gen = "♂️" if gen_val == "Hombre" else ("♀️" if gen_val == "Mujer" else "🚻")
@@ -982,9 +982,9 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                     try:
                         st.image(r["imagen_url"], use_container_width=True)
                     except Exception:
-                        st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
+                        st.markdown("<h2 style='text-align: center; color: #5C4033;'>✨</h2>", unsafe_allow_html=True)
                 else:
-                    st.markdown("<h2 style='text-align: center; color: #D4AF37;'>✨</h2>", unsafe_allow_html=True)
+                    st.markdown("<h2 style='text-align: center; color: #5C4033;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:
                 card_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="{estado_class}">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}<div style="margin-top: 6px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -1095,13 +1095,13 @@ else:
                     for _, r in df.iterrows():
                         notas_str = f"<div><b>Notas:</b> {r['notas_olfativas']}</div>" if pd.notnull(r.get("notas_olfativas")) and str(r.get("notas_olfativas")).strip() != "" else ""
                         tipo_str = f" ({r['tipo']})" if pd.notnull(r.get("tipo")) and str(r.get("tipo")).strip() != "" else ""
-                        gen_str = f" • <span style='color:#E2E8F0;'>[{r['genero']}]</span>"
+                        gen_str = f" • <span style='color:#5C4033;'>[{r['genero']}]</span>"
                         p_100_card = fmt_ars(r['precio_venta_100ml_ars'])
                         p_dec_card = fmt_ars(r['precio_venta_decant_10ml_ars'])
                         cap = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
                         nombre_vis = r["nombre_catalogo"]
 
-                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{gen_str}{notas_str}<div style="margin-top: 8px;"><div><b>Frasco ({cap}ml):</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decants 10ml Listos:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un en stock)</small></div><div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
+                        card_admin_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="perfume-badge">{r["estado"]}</span>{tipo_str}{gen_str}{notas_str}<div style="margin-top: 8px;"><div><b>Frasco ({cap}ml):</b> <span class="perfume-price">{p_100_card}</span> <small>({r["botellas_100ml_cerradas"]} un)</small></div><div><b>Decants 10ml Listos:</b> <span class="perfume-price">{p_dec_card}</span> <small>({r["decants_10ml_preparados"]} un en stock)</small></div><div style="font-size: 0.8rem; color: #7A5C47; margin-top: 4px;">Costo USD: ${r["costo_usd"]:.2f}</div></div></div>'
                         st.markdown(card_admin_html, unsafe_allow_html=True)
                 else:
                     df_display = df.copy()
@@ -1448,7 +1448,7 @@ else:
                         col_seg1, col_seg2 = st.columns([3, 1])
                         with col_seg1:
                             st.markdown(f"""
-                            <div style="background-color: #3D1C19; border-left: 4px solid #FF4D4D; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                            <div style="background-color: #FDF3F2; border-left: 4px solid #C62828; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
                                 <b>👤 Cliente:</b> {row_c['cliente_nombre']} (Cel: {row_c['cliente_celular']})<br>
                                 <b>🌸 Perfume:</b> {row_c['perfume']} ({row_c['presentacion']})<br>
                                 <b>📅 Fecha Compra:</b> {row_c['fecha_compra']} | <b>Vendedor:</b> {row_c['socio_vendedor']}
@@ -1697,7 +1697,7 @@ else:
                     with col_oc_i1:
                         est_badge = f"<b>[{row_oc['estado_inventario']}]</b>"
                         st.markdown(f"""
-                        <div style="background-color: #291D1A; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #D4AF37;">
+                        <div style="background-color: #FFFFFF; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #5C4033; border: 1px solid #E6DEC5;">
                             <b>{row_oc['nombre']}</b> ({cap_ml_clean}ml) x {row_oc['cantidad']} un | {est_badge}<br>
                             <small>Costo USD: <b>${row_oc['costo_usd']:.2f}</b> | Subtotal USD: <b>${row_oc['subtotal_usd']:.2f}</b> | Costo ARS Prov: <b>{fmt_ars(row_oc['costo_ars_prov'])}</b> | PVP Sugerido: <b>{fmt_ars(row_oc['precio_sugerido_ars'])}</b> | Creado por: {row_oc['socio_agrega']}</small>
                         </div>

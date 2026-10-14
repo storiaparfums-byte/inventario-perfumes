@@ -976,6 +976,10 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base["estado"] = df_cat_base["estado"].replace("Disponible en Proveedor", "A pedido")
         df_cat_base = df_cat_base[df_cat_base["estado"].isin(['En Stock', 'A pedido'])]
         
+        # ORDENAMIENTO: PRIORIDAD ABSOLUTA A "En Stock" PRIMERO
+        df_cat_base["orden_prioridad"] = df_cat_base["estado"].apply(lambda x: 0 if x == 'En Stock' else 1)
+        df_cat_base = df_cat_base.sort_values(by=["orden_prioridad", "id"], ascending=[True, False]).reset_index(drop=True)
+        
         df_cat_base["costo_usd"] = pd.to_numeric(df_cat_base["costo_usd"], errors='coerce').fillna(0.0)
         df_cat_base["capacidad_ml"] = df_cat_base["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
         df_cat_base["decants_10ml_preparados"] = pd.to_numeric(df_cat_base["decants_10ml_preparados"], errors='coerce').fillna(0).astype(int)
@@ -995,7 +999,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base["precio_decant_raw"] = (df_cat_base["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
         df_cat_base["precio_decant"] = df_cat_base["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
-        # Sección de Destacados (Escaparate Principal de 3 Frascos)
+        # Sección de Destacados (Escaparate Principal de 3 Frascos con prioridad en stock)
         st.markdown("<h3 style='text-align: center; font-weight: 300; letter-spacing: 3px; margin-bottom: 25px;'>E S C A P A R A T E &nbsp; D E &nbsp; L U J O</h3>", unsafe_allow_html=True)
         
         df_destacados = df_cat_base.head(3)
@@ -1179,6 +1183,11 @@ else:
                 df["capacidad_ml"] = df["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
                 df["genero"] = df["genero"].fillna("Unisex").replace("", "Unisex")
                 df["estado"] = df["estado"].replace("Disponible en Proveedor", "A pedido").fillna("A pedido")
+                
+                # ORDENAMIENTO EN ADMIN: EN STOCK PRIMERO
+                df["orden_prioridad"] = df["estado"].apply(lambda x: 0 if x == 'En Stock' else 1)
+                df = df.sort_values(by=["orden_prioridad", "id"], ascending=[True, False]).reset_index(drop=True)
+
                 df["margen_100ml_custom"] = pd.to_numeric(df["margen_100ml_custom"], errors='coerce')
                 df["margen_aplicado"] = df["margen_100ml_custom"].fillna(margen_100_gen)
                 

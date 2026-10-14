@@ -64,6 +64,14 @@ CATEGORIAS = [
 
 CLAVE_ADMIN_MASTER = "1234"
 
+# Banner por defecto incrustado en Base64 para garantizar visualización inmediata
+BANNER_DEFAULT_BASE64 = (
+    "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QAuRXhpZgAATU0AKgAAAAgAAkAAAwABAAEAAAA"
+    "EAAAAAwABAAAAEAAAAAEAAwABAAAAEAAAAAEGAwABAAAAAQAAABgDAgABAAAAAQAAAEgGAwABAAAAAQAAAA"
+    "gGAwABAAAAAQAAABwGAwABAAAAAQAAAK6BAgAOAAAALAAAAKIAAwABAAAAAQAAAH8AAwABAAAAAQAAAHIA"
+    "AwABAAAAAQAAAH8AAwABAAAAAQAAAHMAAwABAAAAAQAAAAAAAwABAAAAAQAAAAAAAAAAAAAA"
+)
+
 # ---------------------------------------------------------
 # CONEXIÓN A SUPABASE (POOLER - PUERTO 6543)
 # ---------------------------------------------------------
@@ -249,19 +257,14 @@ st.markdown("""
     }
 
     .stImage > img {
-        max-height: 180px !important;
-        width: auto !important;
-        object-fit: contain !important;
+        max-height: 240px !important;
+        width: 100% !important;
+        object-fit: cover !important;
         margin: 0 auto !important;
         display: block !important;
         border-radius: 12px !important;
         background-color: #FAF8F5 !important;
-        padding: 10px !important;
-        transition: transform 0.3s ease;
-    }
-    
-    .stImage > img:hover {
-        transform: scale(1.03);
+        box-shadow: 0 10px 30px rgba(74, 59, 50, 0.08);
     }
 
     /* Botones refinados y minimalistas */
@@ -434,9 +437,9 @@ def init_db():
 
         conn.execute(text('''
             INSERT INTO config (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars, banner_portada_url)
-            VALUES (1, 1200.0, 30.0, 100.0, 800.0, '')
+            VALUES (1, 1200.0, 30.0, 100.0, 800.0, :banner_def)
             ON CONFLICT (id) DO NOTHING
-        '''))
+        '''), {"banner_def": BANNER_DEFAULT_BASE64})
 
         conn.execute(text('''
             CREATE TABLE IF NOT EXISTS clientes_seguimiento (
@@ -531,8 +534,10 @@ def cargar_config():
     if not df.empty:
         r = df.iloc[0]
         banner_url = str(r.get("banner_portada_url", "")) if pd.notnull(r.get("banner_portada_url")) else ""
+        if banner_url.strip() == "":
+            banner_url = BANNER_DEFAULT_BASE64
         return float(r["cotizacion_dolar"]), float(r["margen_100ml"]), float(r["margen_decant"]), float(r["costo_envase_decant_ars"]), banner_url
-    return 1200.0, 30.0, 100.0, 800.0, ""
+    return 1200.0, 30.0, 100.0, 800.0, BANNER_DEFAULT_BASE64
 
 def guardar_config(dolar, m100, mdec, envase, banner_url=""):
     execute_query('''
@@ -986,7 +991,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
     if banner_portada_url and banner_portada_url.strip() != "":
         try:
             if banner_portada_url.startswith("data:image"):
-                # Extraer bytes desde la cadena base64 almacenada en Supabase
                 header, encoded = banner_portada_url.split(",", 1)
                 img_bytes = base64.b64decode(encoded)
                 st.image(img_bytes, use_container_width=True)
@@ -2372,6 +2376,6 @@ else:
                                 st.success("🎉 ¡Todos los datos de la copia de seguridad se restauraron en Supabase sin errores!")
                                 st.rerun()
                             else:
-                                st.warning("Marca la casilla para confirmar.")
+                                st.warning("Manda la marca de confirmación.")
                     except Exception as err_bk:
                         st.error(f"Error restaurando la copia: {err_bk}")

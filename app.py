@@ -2067,3 +2067,311 @@ else:
                                     else:
                                         conn.execute(
                                             text('''
+                                                INSERT INTO stock (nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, socio_asignado, destacado_portada)
+                                                VALUES (:nom, :nom_com, '', 'Unisex', :cap, 0, 0, 0, :costo, 'A pedido', '', FALSE)
+                                            '''),
+                                            {"nom": nombre_crudo, "nom_com": nombre_limpio, "cap": int(r['capacidad_ml']), "costo": float(r['costo_usd'])}
+                                        )
+
+                            st.success("¡Sincronización completada sin duplicar productos!")
+                            st.rerun()
+                    else:
+                        st.warning("No se encontraron productos o precios válidos dentro del archivo PDF subido.")
+                except Exception as e:
+                    st.error(f"Error procesando PDF: {e}")
+
+        # --- SECCIÓN: EDITAR / ELIMINAR ---
+        elif seccion_admin == "✏️ Editar / Eliminar":
+            st.header("✏️ Editar Nombres, Estado, Género, Stock & Destacados")
+            df_mod = cargar_datos_stock()
+
+            if not df_mod.empty:
+                opciones_mod = [f"ID: {row['id']} | {row['nombre_catalogo']} (Prov: {row['nombre']})" for _, row in df_mod.iterrows()]
+                prod_sel = st.selectbox("Selecciona producto a editar:", opciones_mod)
+                id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
+                prod_data = df_mod[df_mod['id'] == id_mod].iloc[0]
+
+                val_tipo = prod_data['tipo'] if pd.notnull(prod_data.get('tipo')) and prod_data['tipo'] in CATEGORIAS else ""
+                val_gen = prod_data['genero'] if pd.notnull(prod_data.get('genero')) and prod_data['genero'] in GENEROS else "Unisex"
+                val_cap = limpiar_int_ml(prod_data.get('capacidad_ml', 100), 100)
+                val_decants = int(prod_data.get('decants_10ml_preparados', 0))
+                val_dest = bool(prod_data.get('destacado_portada', False))
+
+                with st.form("form_edicion"):
+                    nuevo_nombre = st.text_input("Nombre Interno (Proveedor)", value=prod_data['nombre'])
+                    nuevo_nombre_comercial = st.text_input("Nombre Comercial (Visible en Catálogo sin 'nuevoo')", value=str(prod_data.get('nombre_comercial', '')))
+                    
+                    col_ed1, col_ed2, col_ed3 = st.columns(3)
+                    with col_ed1:
+                        nuevo_tipo = st.selectbox("Marca / Categoría", CATEGORIAS, index=CATEGORIAS.index(val_tipo) if val_tipo in CATEGORIAS else 0)
+                    with col_ed2:
+                        nuevo_genero = st.selectbox("Género", GENEROS, index=GENEROS.index(val_gen) if val_gen in GENEROS else 0)
+                    with col_ed3:
+                        nueva_capacidad = st.number_input("Capacidad Total en ML", min_value=10, value=val_cap, step=5)
+
+                    nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(prod_data['estado']) if prod_data['estado'] in ESTADOS else 0)
+                    
+                    col_ed_s1, col_ed_s2 = st.columns(2)
+                    with col_ed_s1:
+                        nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']))
+                    with col_ed_s2:
+                        nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))
+
+                    col_ed_b1, col_ed_b2, col_ed_b3 = st.columns(3)
+                    with col_ed_b1:
+                        nbot = st.number_input("Frascos Cerrados en Stock", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
+                    with col_ed_b2:
+                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(nueva_capacidad), value=int(prod_data['ml_disponibles_abiertos']))
+                    with col_ed_b3:
+                        ndec = st.number_input("🧪 Decants 10ml Listos", min_value=0, value=val_decants)
+                    
+                    val_notas = prod_data['notas_olfativas'] if pd.notnull(prod_data.get('notas_olfativas')) else ""
+                    val_img = prod_data['imagen_url'] if pd.notnull(prod_data.get('imagen_url')) else ""
+                    
+                    nuevas_notas = st.text_input("Notas Olfativas", value=str(val_notas))
+                    nueva_img = st.text_input("URL Imagen", value=str(val_img))
+                    nuevo_dest_portada = st.checkbox("⭐ Destacar en Portada (Escaparate Principal)", value=val_dest)
+
+                    if st.form_submit_button("💾 Guardar Cambios de Stock"):
+                        execute_query('''
+                            UPDATE stock
+                            SET nombre = :nom, nombre_comercial = :nom_com, tipo = :tipo, genero = :gen, capacidad_ml = :cap, estado = :est, costo_usd = :costo, margen_100ml_custom = :marg,
+                                botellas_100ml_cerradas = :nbot, ml_disponibles_abiertos = :nml, decants_10ml_preparados = :ndec, 
+                                notas_olfativas = :notas, imagen_url = :img, destacado_portada = :dest
+                            WHERE id = :idp
+                        ''', {"nom": nuevo_nombre, "nom_com": nuevo_nombre_comercial, "tipo": nuevo_tipo, "gen": nuevo_genero, "cap": int(nueva_capacidad), "est": nuevo_estado, "costo": nuevo_costo, "marg": nuevo_margen, "nbot": nbot, "nml": nml, "ndec": ndec, "notas": nuevas_notas, "img": nueva_img, "dest": nuevo_dest_portada, "idp": id_mod})
+                        st.success("¡Stock y datos del perfume actualizados correctamente!")
+                        st.rerun()
+
+                st.markdown("---")
+                confirm_del_prod = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prod_{id_mod}")
+                if st.button(f"🗑️ Eliminar '{prod_data['nombre']}'"):
+                    if confirm_del_prod:
+                        execute_query("DELETE FROM stock WHERE id = :idp", {"idp": id_mod})
+                        execute_query("DELETE FROM ordenes_compra WHERE nombre = :nom", {"nom": prod_data['nombre']})
+                        st.success("Perfume eliminado del sistema.")
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla '⚠️ ¿Confirmar eliminación?' para borrar este producto.")
+
+            st.markdown("---")
+            clave_inv_input = st.text_input("🔑 Clave Master (Vaciar catálogo):", type="password")
+            confirm_vaciar_cat = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_cat_master")
+            if st.button("🚨 VACIAR CATALOGO COMPLETO"):
+                if clave_inv_input == CLAVE_ADMIN_MASTER and confirm_vaciar_cat:
+                    execute_query("DELETE FROM stock")
+                    st.success("Catálogo vaciado.")
+                    st.rerun()
+                else:
+                    st.error("Clave incorrecta o casilla de confirmación no marcada.")
+
+        # --- SECCIÓN: HISTORIAL ---
+        elif seccion_admin == "📜 Historial":
+            st.header("📜 Historial de Ventas por Socio & Anulación de Movimientos")
+            df_hist = cargar_historial()
+
+            if not df_hist.empty:
+                col_hf1, col_hf2 = st.columns([2, 1])
+                with col_hf1:
+                    busq_hist_p = st.text_input("🔍 Buscar por perfume o cliente:", placeholder="Ej. Khamrah, Juan...")
+                with col_hf2:
+                    filtro_socio_hist = st.selectbox("👤 Filtrar por Socio:", ["Todos los Socios"] + SOCIOS)
+
+                df_hist_filt = df_hist.copy()
+
+                if busq_hist_p:
+                    df_hist_filt = df_hist_filt[
+                        df_hist_filt["perfume"].astype(str).str.contains(busq_hist_p, case=False, na=False) |
+                        df_hist_filt["tipo_movimiento"].astype(str).str.contains(busq_hist_p, case=False, na=False)
+                    ]
+
+                if filtro_socio_hist != "Todos los Socios":
+                    df_hist_filt = df_hist_filt[df_hist_filt["socio"] == filtro_socio_hist]
+
+                st.dataframe(df_hist_filt.drop(columns=['id', 'fecha_dt'], errors='ignore'), use_container_width=True)
+
+                pdf_hist_bytes = generar_pdf_historial_ventas(df_hist_filt, filtro_socio_hist)
+                st.download_button(
+                    label="📄 Descargar Historial de Ventas (PDF)",
+                    data=pdf_hist_bytes,
+                    file_name=f"Historial_Ventas_Storia_{filtro_socio_hist.replace(' ', '_')}.pdf",
+                    mime="application/pdf"
+                )
+
+                st.markdown("---")
+                opciones_hist = [f"ID: {row['id']} | {row['fecha']} - {row['perfume']} ({row['tipo_movimiento']})" for _, row in df_hist.iterrows()]
+                reg_sel = st.selectbox("Selecciona movimiento a anular / eliminar:", opciones_hist)
+                id_h_del = int(reg_sel.split(" | ")[0].replace("ID: ", ""))
+
+                confirm_anular = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_anular_hist_{id_h_del}")
+                if st.button("🔄 Anular Movimiento & Devolver Stock Automáticamente"):
+                    if confirm_anular:
+                        df_res_h = fetch_df("SELECT id_producto, presentacion, cantidad FROM historial WHERE id = :idh", {"idh": id_h_del})
+                        
+                        if not df_res_h.empty:
+                            r_h = df_res_h.iloc[0]
+                            id_p = r_h["id_producto"]
+                            pres = r_h["presentacion"]
+                            cant = int(r_h["cantidad"]) if pd.notnull(r_h["cantidad"]) and int(r_h["cantidad"]) > 0 else 1
+                            
+                            if id_p and id_p > 0:
+                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados FROM stock WHERE id = :idp", {"idp": id_p})
+                                if not df_stock_p.empty:
+                                    r_p = df_stock_p.iloc[0]
+                                    bot, ml, dec = int(r_p["botellas_100ml_cerradas"]), int(r_p["ml_disponibles_abiertos"]), int(r_p["decants_10ml_preparados"])
+                                    if "Frasco" in str(pres):
+                                        execute_query("UPDATE stock SET botellas_100ml_cerradas = :nbot, estado = 'En Stock' WHERE id = :idp", {"nbot": bot + cant, "idp": id_p})
+                                    elif "Listo" in str(pres):
+                                        execute_query("UPDATE stock SET decants_10ml_preparados = :ndec, estado = 'En Stock' WHERE id = :idp", {"ndec": dec + cant, "idp": id_p})
+                                    elif "abierto" in str(pres):
+                                        execute_query("UPDATE stock SET ml_disponibles_abiertos = :nml, estado = 'En Stock' WHERE id = :idp", {"nml": ml + (cant * 10), "idp": id_p})
+
+                        execute_query("DELETE FROM historial WHERE id = :idh", {"idh": id_h_del})
+                        st.success("¡Movimiento anulado y stock devuelto al inventario automáticamente!")
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla para efectuar la anulación.")
+
+                st.markdown("---")
+                clave_hist = st.text_input("🔑 Clave Master (Vaciar historial):", type="password")
+                confirm_vaciar_hist = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_hist_master")
+                if st.button("🚨 VACIAR HISTORIAL COMPLETO"):
+                    if clave_hist == CLAVE_ADMIN_MASTER and confirm_vaciar_hist:
+                        execute_query("DELETE FROM historial")
+                        st.warning("Historial vaciado.")
+                        st.rerun()
+                    else:
+                        st.error("Clave incorrecta o casilla de confirmación no marcada.")
+            else:
+                st.info("Sin movimientos en el historial.")
+
+        # --- SECCIÓN: COPIAS DE SEGURIDAD ---
+        elif seccion_admin == "💾 Copias de Seguridad":
+            st.header("💾 Copias de Seguridad (Backup y Restauración)")
+
+            tab_bk1, tab_bk2 = st.tabs(["📥 Descargar Backup de la App", "📤 Restaurar Copia de Seguridad"])
+
+            with tab_bk1:
+                backup_data = {
+                    "stock": fetch_df("SELECT * FROM stock").to_dict(orient="records"),
+                    "historial": fetch_df("SELECT * FROM historial").to_dict(orient="records"),
+                    "config": fetch_df("SELECT * FROM config").to_dict(orient="records"),
+                    "clientes_seguimiento": fetch_df("SELECT * FROM clientes_seguimiento").to_dict(orient="records"),
+                    "egresos": fetch_df("SELECT * FROM egresos").to_dict(orient="records"),
+                    "ordenes_compra": fetch_df("SELECT * FROM ordenes_compra").to_dict(orient="records")
+                }
+                json_bytes = json.dumps(backup_data, indent=4, ensure_ascii=False).encode('utf-8')
+                
+                st.download_button(
+                    label="⬇️ Descargar Copia de Seguridad Completa (.json)",
+                    data=json_bytes,
+                    file_name=f"Backup_Storia_{datetime.now().strftime('%Y_%m_%d_%H%M')}.json",
+                    mime="application/json"
+                )
+
+            with tab_bk2:
+                uploaded_backup = st.file_uploader("Selecciona el archivo de Backup (.json):", type=["json"])
+
+                if uploaded_backup is not None:
+                    try:
+                        data_restaurar = json.load(uploaded_backup)
+                        
+                        st.write("📋 **Contenido detectado:**")
+                        for t_name, rows_t in data_restaurar.items():
+                            st.write(f"- Tabla **{t_name}**: {len(rows_t)} registros.")
+
+                        confirm_restore = st.checkbox("⚠️ Confirmar restauración completa", key="chk_confirm_restore")
+
+                        if st.button("🚀 Restaurar Copia de Seguridad"):
+                            if confirm_restore:
+                                engine = get_engine()
+                                with engine.begin() as conn:
+                                    if "stock" in data_restaurar:
+                                        conn.execute(text("DELETE FROM stock"))
+                                        for r in data_restaurar["stock"]:
+                                            conn.execute(
+                                                text('''INSERT INTO stock (id, nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, margen_100ml_custom, estado, socio_asignado, monto_senado_ars, cliente_senado, notas_olfativas, imagen_url, destacado_portada)
+                                                        VALUES (:id, :nombre, :nombre_comercial, :tipo, :genero, :capacidad_ml, :botellas_100ml_cerradas, :ml_disponibles_abiertos, :decants_10ml_preparados, :costo_usd, :margen_100ml_custom, :estado, :socio_asignado, :monto_senado_ars, :cliente_senado, :notas_olfativas, :imagen_url, :destacado_portada)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "nombre": str(r.get("nombre", "")),
+                                                    "nombre_comercial": str(r.get("nombre_comercial", r.get("nombre", ""))),
+                                                    "tipo": str(r.get("tipo", "")),
+                                                    "genero": str(r.get("genero", "Unisex")),
+                                                    "capacidad_ml": int(r.get("capacidad_ml", 100)),
+                                                    "botellas_100ml_cerradas": int(r.get("botellas_100ml_cerradas", 0)),
+                                                    "ml_disponibles_abiertos": int(r.get("ml_disponibles_abiertos", 0)),
+                                                    "decants_10ml_preparados": int(r.get("decants_10ml_preparados", 0)),
+                                                    "costo_usd": float(r.get("costo_usd", 0.0)),
+                                                    "margen_100ml_custom": r.get("margen_100ml_custom"),
+                                                    "estado": str(r.get("estado", "A pedido")),
+                                                    "socio_asignado": str(r.get("socio_asignado", "")),
+                                                    "monto_senado_ars": float(r.get("monto_senado_ars", 0.0)),
+                                                    "cliente_senado": str(r.get("cliente_senado", "")),
+                                                    "notas_olfativas": str(r.get("notas_olfativas", "")),
+                                                    "imagen_url": str(r.get("imagen_url", "")),
+                                                    "destacado_portada": bool(r.get("destacado_portada", False))
+                                                }
+                                            )
+
+                                    if "historial" in data_restaurar:
+                                        conn.execute(text("DELETE FROM historial"))
+                                        for r in data_restaurar["historial"]:
+                                            conn.execute(
+                                                text('''INSERT INTO historial (id, fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad)
+                                                        VALUES (:id, :fecha, :perfume, :socio, :tipo_movimiento, :monto_ingreso_ars, :id_producto, :presentacion, :cantidad)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha": str(r.get("fecha", "")),
+                                                    "perfume": str(r.get("perfume", "")),
+                                                    "socio": str(r.get("socio", "")),
+                                                    "tipo_movimiento": str(r.get("tipo_movimiento", "")),
+                                                    "monto_ingreso_ars": float(r.get("monto_ingreso_ars", 0.0)),
+                                                    "id_producto": int(r.get("id_producto", 0)),
+                                                    "presentacion": str(r.get("presentacion", "")),
+                                                    "cantidad": int(r.get("cantidad", 1))
+                                                }
+                                            )
+
+                                    if "egresos" in data_restaurar:
+                                        conn.execute(text("DELETE FROM egresos"))
+                                        for r in data_restaurar["egresos"]:
+                                            conn.execute(
+                                                text('''INSERT INTO egresos (id, fecha, categoria, descripcion, monto_ars, socio_registra)
+                                                        VALUES (:id, :fecha, :categoria, :descripcion, :monto_ars, :socio_registra)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha": str(r.get("fecha", "")),
+                                                    "categoria": str(r.get("categoria", "")),
+                                                    "descripcion": str(r.get("descripcion", "")),
+                                                    "monto_ars": float(r.get("monto_ars", 0.0)),
+                                                    "socio_registra": str(r.get("socio_registra", ""))
+                                                }
+                                            )
+
+                                    if "clientes_seguimiento" in data_restaurar:
+                                        conn.execute(text("DELETE FROM clientes_seguimiento"))
+                                        for r in data_restaurar["clientes_seguimiento"]:
+                                            conn.execute(
+                                                text('''INSERT INTO clientes_seguimiento (id, fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                                        VALUES (:id, :fecha_compra, :cliente_nombre, :cliente_celular, :socio_vendedor, :perfume, :presentacion, :dias_estimados, :fecha_recordatorio, :estado)'''),
+                                                {
+                                                    "id": r.get("id"),
+                                                    "fecha_compra": str(r.get("fecha_compra", "")),
+                                                    "cliente_nombre": str(r.get("cliente_nombre", "")),
+                                                    "cliente_celular": str(r.get("cliente_celular", "")),
+                                                    "socio_vendedor": str(r.get("socio_vendedor", "")),
+                                                    "perfume": str(r.get("perfume", "")),
+                                                    "presentacion": str(r.get("presentacion", "")),
+                                                    "dias_estimados": int(r.get("dias_estimados", 90)),
+                                                    "fecha_recordatorio": str(r.get("fecha_recordatorio", "")),
+                                                    "estado": str(r.get("estado", "Pendiente"))
+                                                }
+                                            )
+
+                                st.success("🎉 ¡Todos los datos de la copia de seguridad se restauraron en Supabase sin errores!")
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
+                    except Exception as err_bk:
+                        st.error(f"Error restaurando la copia: {err_bk}")

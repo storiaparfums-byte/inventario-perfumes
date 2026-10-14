@@ -64,6 +64,9 @@ CATEGORIAS = [
 
 CLAVE_ADMIN_MASTER = "1234"
 
+# URL de la imagen compartida en el chat configurada por defecto
+BANNER_IMAGEN_CHAT = "https://generativelanguage.googleapis.com/v1beta/files/fcad0119-0118-472e-8a03-7b1897d29633/download"
+
 # ---------------------------------------------------------
 # CONEXIÓN A SUPABASE (POOLER - PUERTO 6543)
 # ---------------------------------------------------------
@@ -433,9 +436,10 @@ def init_db():
         except Exception:
             pass
 
-        conn.execute(text('''
+        # Asignar la imagen del chat por defecto si estuviera vacío
+        conn.execute(text(f'''
             INSERT INTO config (id, cotizacion_dolar, margen_100ml, margen_decant, costo_envase_decant_ars, banner_portada_url)
-            VALUES (1, 1200.0, 30.0, 100.0, 800.0, '')
+            VALUES (1, 1200.0, 30.0, 100.0, 800.0, '{BANNER_IMAGEN_CHAT}')
             ON CONFLICT (id) DO NOTHING
         '''))
 
@@ -532,8 +536,10 @@ def cargar_config():
     if not df.empty:
         r = df.iloc[0]
         banner_url = str(r.get("banner_portada_url", "")) if pd.notnull(r.get("banner_portada_url")) else ""
+        if not banner_url.strip():
+            banner_url = BANNER_IMAGEN_CHAT
         return float(r["cotizacion_dolar"]), float(r["margen_100ml"]), float(r["margen_decant"]), float(r["costo_envase_decant_ars"]), banner_url
-    return 1200.0, 30.0, 100.0, 800.0, ""
+    return 1200.0, 30.0, 100.0, 800.0, BANNER_IMAGEN_CHAT
 
 def guardar_config(dolar, m100, mdec, envase, banner_url=""):
     execute_query('''
@@ -990,72 +996,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 <img src="{banner_portada_url}" style="width: 100%; max-height: 420px; object-fit: cover; border-radius: 16px; box-shadow: 0 10px 30px rgba(74, 59, 50, 0.08);">
             </div>
         """, unsafe_allow_html=True)
-    else:
-        df_cat_base = cargar_datos_stock()
-        
-        if not df_cat_base.empty:
-            df_cat_base["estado"] = df_cat_base["estado"].replace("Disponible en Proveedor", "A pedido")
-            df_cat_base = df_cat_base[df_cat_base["estado"].isin(['En Stock', 'A pedido'])]
-            
-            df_cat_base["orden_portada_val"] = df_cat_base["destacado_portada"].apply(lambda x: 0 if x == True else 1)
-            df_cat_base["orden_stock_val"] = df_cat_base["estado"].apply(lambda x: 0 if x == 'En Stock' else 1)
-            
-            df_cat_base = df_cat_base.sort_values(by=["orden_portada_val", "orden_stock_val", "id"], ascending=[True, True, False]).reset_index(drop=True)
-            
-            df_cat_base["costo_usd"] = pd.to_numeric(df_cat_base["costo_usd"], errors='coerce').fillna(0.0)
-            df_cat_base["capacidad_ml"] = df_cat_base["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
-            df_cat_base["decants_10ml_preparados"] = pd.to_numeric(df_cat_base["decants_10ml_preparados"], errors='coerce').fillna(0).astype(int)
-            df_cat_base["botellas_100ml_cerradas"] = pd.to_numeric(df_cat_base["botellas_100ml_cerradas"], errors='coerce').fillna(0).astype(int)
-            df_cat_base["ml_disponibles_abiertos"] = pd.to_numeric(df_cat_base["ml_disponibles_abiertos"], errors='coerce').fillna(0).astype(int)
-
-            df_cat_base["margen_100ml_custom"] = pd.to_numeric(df_cat_base["margen_100ml_custom"], errors='coerce')
-            df_cat_base["margen_aplicado"] = df_cat_base["margen_100ml_custom"].fillna(margen_100_gen)
-            
-            df_cat_base["costo_ars"] = df_cat_base["costo_usd"] * dolar_hoy
-            df_cat_base["precio_100ml_raw"] = df_cat_base["costo_ars"] * (1 + (df_cat_base["margen_aplicado"] / 100))
-            df_cat_base["precio_100ml"] = df_cat_base["precio_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
-            
-            df_cat_base["costo_liquido_10ml"] = df_cat_base.apply(
-                lambda r: (r["costo_ars"] / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_ars"] * 0.10), axis=1
-            )
-            df_cat_base["precio_decant_raw"] = (df_cat_base["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
-            df_cat_base["precio_decant"] = df_cat_base["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
-
-            st.markdown("<h3 style='text-align: center; font-weight: 300; letter-spacing: 3px; margin-bottom: 25px;'>E S C A P A R A T E &nbsp; D E &nbsp; L U J O</h3>", unsafe_allow_html=True)
-            
-            df_destacados = df_cat_base.head(3)
-            cols_dest = st.columns(len(df_destacados) if len(df_destacados) > 0 else 1)
-            
-            for idx_d, (_, r_dest) in enumerate(df_destacados.iterrows()):
-                with cols_dest[idx_d]:
-                    nombre_vis_d = r_dest["nombre_catalogo"]
-                    p_100_d = fmt_ars(r_dest['precio_100ml'])
-                    cap_d = limpiar_int_ml(r_dest.get("capacidad_ml", 100), 100)
-                    
-                    if pd.notnull(r_dest.get("imagen_url")) and str(r_dest.get("imagen_url")).strip().startswith("http"):
-                        try:
-                            st.image(r_dest["imagen_url"], use_container_width=True)
-                        except Exception:
-                            st.markdown("<h1 style='text-align: center; color: #7A5C47;'>✨</h1>", unsafe_allow_html=True)
-                    else:
-                        st.markdown("<h1 style='text-align: center; color: #7A5C47;'>✨</h1>", unsafe_allow_html=True)
-                    
-                    st.markdown(f"""
-                        <div style="text-align: center;">
-                            <div style="font-size: 1.1rem; font-weight: 500; color: #2C2220; margin-top: 10px;">{nombre_vis_d}</div>
-                            <div style="color: #7A5C47; font-weight: 600; margin-bottom: 10px;">{p_100_d}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if st.button(f"Añadir al Carrito", key=f"dest_add_{r_dest['id']}"):
-                        st.session_state.carrito_cliente.append({
-                            "nombre": nombre_vis_d,
-                            "presentacion": f"Frasco Cerrado ({cap_d}ml)",
-                            "cantidad": 1,
-                            "precio": r_dest['precio_100ml']
-                        })
-                        st.success("¡Agregado!")
-                        st.rerun()
 
     st.markdown("---")
 
@@ -1324,7 +1264,7 @@ else:
                     st.success("¡Banner de portada actualizado con éxito!")
                     st.rerun()
 
-            if st.button("🗑️ Quitar Banner Actual (Volver a 3 frascos destacados)"):
+            if st.button("🗑️ Quitar Banner Actual"):
                 guardar_config(dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase, "")
                 st.success("Banner removido.")
                 st.rerun()
@@ -1337,21 +1277,19 @@ else:
         # --- SECCIÓN: DESTACADOS PORTADA ---
         elif seccion_admin == "✨ Destacados Portada":
             st.header("✨ Configurar Destacados de Portada")
-            st.info("💡 Selecciona qué fragancias deseas fijar en los primeros tres lugares del escaparate principal (si no hay un banner de imagen fija activo).")
+            st.info("💡 Selecciona qué fragancias deseas destacar (si no hay un banner de imagen fija activo).")
 
             df_dest_conf = cargar_datos_stock()
 
             if not df_dest_conf.empty:
                 destacados_actuales = df_dest_conf[df_dest_conf["destacado_portada"] == True]["id"].tolist()
                 
-                st.subheader(f"Fragancias actualmente destacadas ({len(destacados_actuales)} / 3 recomendadas):")
+                st.subheader(f"Fragancias actualmente destacadas ({len(destacados_actuales)}):")
                 if destacados_actuales:
                     for id_f in destacados_actuales:
                         row_f = df_dest_conf[df_dest_conf["id"] == id_f]
                         if not row_f.empty:
                             st.markdown(f"⭐ **{row_f.iloc[0]['nombre_catalogo']}** ({row_f.iloc[0]['tipo']})")
-                else:
-                    st.caption("No hay ninguna fijada manualmente. Actualmente el sistema muestra los primeros en stock automáticamente.")
 
                 st.markdown("---")
                 with st.form("form_destacados_portada"):
@@ -1359,10 +1297,9 @@ else:
                     default_sel = df_dest_conf[df_dest_conf["destacado_portada"] == True]["nombre_catalogo"].tolist()
                     
                     seleccionados_portada = st.multiselect(
-                        "Selecciona hasta 3 fragancias para la portada:",
+                        "Selecciona fragancias para la portada:",
                         options=opciones_perf,
-                        default=default_sel,
-                        max_selections=3
+                        default=default_sel
                     )
                     
                     btn_guardar_dest = st.form_submit_button("💾 Guardar Destacados de Portada")

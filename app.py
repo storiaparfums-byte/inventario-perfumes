@@ -1007,8 +1007,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
     if not df_cat_base_gen.empty:
         df_cat_base_gen["estado"] = df_cat_base_gen["estado"].replace("Disponible en Proveedor", "A pedido")
         df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["estado"].isin(['En Stock', 'A pedido', 'Agotado'])]
-        df_cat_base_gen["orden_stock_val"] = df_cat_base_gen["estado"].apply(lambda x: 0 if x == 'En Stock' else 1)
-        df_cat_base_gen = df_cat_base_gen.sort_values(by=["orden_stock_val", "id"], ascending=[True, False]).reset_index(drop=True)
         
         df_cat_base_gen["costo_usd"] = pd.to_numeric(df_cat_base_gen["costo_usd"], errors='coerce').fillna(0.0)
         df_cat_base_gen["capacidad_ml"] = df_cat_base_gen["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
@@ -1029,7 +1027,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         df_cat_base_gen["precio_decant_raw"] = (df_cat_base_gen["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
         df_cat_base_gen["precio_decant"] = df_cat_base_gen["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
 
-        col_f1, col_f2, col_f3 = st.columns(3)
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         with col_f1:
             busq_cli = st.text_input("🔍 Buscar fragancia...", placeholder="Ej. Khamrah, Club de Nuit...")
         with col_f2:
@@ -1037,6 +1035,18 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         with col_f3:
             marcas_disponibles = ["Todas las marcas"] + sorted(list(set(df_cat_base_gen["tipo"].dropna().unique())))
             filtro_marca = st.selectbox("🏷️ Marca / Casa:", marcas_disponibles)
+        with col_f4:
+            orden_filtro_cli = st.selectbox(
+                "🔀 Ordenar y Filtrar:",
+                [
+                    "Predeterminado (Stock primero)",
+                    "Solo en Stock",
+                    "Precio: Menor a Mayor",
+                    "Precio: Mayor a Menor",
+                    "Recién Ingresados"
+                ],
+                key="orden_filtro_cli"
+            )
 
         if busq_cli:
             df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["nombre_catalogo"].astype(str).str.contains(busq_cli, case=False, na=False)]
@@ -1044,6 +1054,20 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["genero"] == filtro_genero]
         if filtro_marca != "Todas las marcas":
             df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["tipo"] == filtro_marca]
+
+        # Aplicar ordenamiento y filtros en la vista de cliente
+        if orden_filtro_cli == "Solo en Stock":
+            df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["estado"] == "En Stock"]
+            df_cat_base_gen = df_cat_base_gen.sort_values(by="id", ascending=False).reset_index(drop=True)
+        elif orden_filtro_cli == "Precio: Menor a Mayor":
+            df_cat_base_gen = df_cat_base_gen.sort_values(by="precio_100ml", ascending=True).reset_index(drop=True)
+        elif orden_filtro_cli == "Precio: Mayor a Menor":
+            df_cat_base_gen = df_cat_base_gen.sort_values(by="precio_100ml", ascending=False).reset_index(drop=True)
+        elif orden_filtro_cli == "Recién Ingresados":
+            df_cat_base_gen = df_cat_base_gen.sort_values(by="id", ascending=False).reset_index(drop=True)
+        else:
+            df_cat_base_gen["orden_stock_val"] = df_cat_base_gen["estado"].apply(lambda x: 0 if x == 'En Stock' else 1)
+            df_cat_base_gen = df_cat_base_gen.sort_values(by=["orden_stock_val", "id"], ascending=[True, False]).reset_index(drop=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1758,7 +1782,7 @@ else:
                         cat_gasto = st.selectbox("Categoría del Gasto:", ["Envases / Decants", "Bolsas & Packings", "Tarjetas / Etiquetas", "Envíos / Logística", "Compra Stock", "Marketing / Publicidad", "Otros Gastos"])
                         desc_gasto = st.text_input("Descripción del Gasto:", placeholder="Ej. 100 bolsas kraft personalizadas")
                     with col_eg2:
-                        monto_gasto = st.number_input("Monto en Pesos ($ ARS):", min_value=0.0, value=0.0, step=500.0)
+                        monto_gasto = st.number_input("Monto in Pesos ($ ARS):", min_value=0.0, value=0.0, step=500.0)
                         socio_gasto = st.selectbox("Socio que abonó el gasto:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
                     
                     btn_save_eg = st.form_submit_button("💾 Registar Gasto")

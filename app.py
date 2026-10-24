@@ -1221,15 +1221,15 @@ else:
                     marcas_adm = ["Todas"] + sorted(list(set(df["tipo"].dropna().unique())))
                     filtro_marca_adm = st.selectbox("🏷️ Marca:", marcas_adm)
 
-                # Selector de Filtro y Ordenamiento
+                # Selector exacto de Filtro y Ordenamiento Solicitado
                 orden_filtro = st.selectbox(
                     "🔀 Filtrar y Ordenar Lista:",
                     [
                         "Predeterminado (Destacados y Stock primero)",
-                        "📦 Perfumes en Stock",
-                        "💰 Precios: de menor a mayor",
-                        "💎 Precios: mayor a menor",
-                        "✨ Recién ingresados"
+                        "Solo en Stock",
+                        "Precio: Menor a Mayor",
+                        "Precio: Mayor a Menor",
+                        "Recién Ingresados"
                     ]
                 )
 
@@ -1242,15 +1242,15 @@ else:
                 if filtro_marca_adm != "Todas":
                     df = df[df["tipo"] == filtro_marca_adm]
 
-                # Aplicar lógica de ordenamiento y filtrado
-                if orden_filtro == "📦 Perfumes en Stock":
+                # Aplicar la lógica de filtrado y ordenamiento solicitada
+                if orden_filtro == "Solo en Stock":
                     df = df[df["estado"] == "En Stock"]
                     df = df.sort_values(by="id", ascending=False).reset_index(drop=True)
-                elif orden_filtro == "💰 Precios: de menor a mayor":
+                elif orden_filtro == "Precio: Menor a Mayor":
                     df = df.sort_values(by="precio_venta_100ml_ars", ascending=True).reset_index(drop=True)
-                elif orden_filtro == "💎 Precios: mayor a menor":
+                elif orden_filtro == "Precio: Mayor a Menor":
                     df = df.sort_values(by="precio_venta_100ml_ars", ascending=False).reset_index(drop=True)
-                elif orden_filtro == "✨ Recién ingresados":
+                elif orden_filtro == "Recién Ingresados":
                     df = df.sort_values(by="id", ascending=False).reset_index(drop=True)
                 else:
                     df["orden_portada_val"] = df["destacado_portada"].apply(lambda x: 0 if x == True else 1)
@@ -1642,7 +1642,7 @@ else:
                                         if ml >= ml_necesarios:
                                             nuevos_ml = ml - ml_necesarios
                                             nuevo_est = "En Stock" if (nuevos_ml >= 10 or botellas > 0 or decants > 0) else "A pedido"
-                                            execute_query("UPDATE stock SET ml_disponibles_abiertos = :nml, estado = :est, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' WHERE id = :id_p", {"nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
+                                            execute_query("UPDATE stock SET ml_disponibles_abiertos = :nml, estado = :est, monto_senado_ars = 0, socio_asignado = '' WHERE id = :id_p", {"nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
                                         elif botellas > 0:
                                             nuevas_bot = botellas - 1
                                             nuevos_ml = ml + cap_tot - ml_necesarios

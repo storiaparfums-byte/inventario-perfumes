@@ -1005,7 +1005,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
     df_cat_base_gen = cargar_datos_stock()
     if not df_cat_base_gen.empty:
         df_cat_base_gen["estado"] = df_cat_base_gen["estado"].replace("Disponible en Proveedor", "A pedido")
-        df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["estado"].isin(['En Stock', 'A pedido'])]
+        df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["estado"].isin(['En Stock', 'A pedido', 'Agotado'])]
         df_cat_base_gen["orden_stock_val"] = df_cat_base_gen["estado"].apply(lambda x: 0 if x == 'En Stock' else 1)
         df_cat_base_gen = df_cat_base_gen.sort_values(by=["orden_stock_val", "id"], ascending=[True, False]).reset_index(drop=True)
         
@@ -1054,21 +1054,39 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             icon_gen = "♂️" if gen_val == "Hombre" else ("♀️" if gen_val == "Mujer" else "🚻")
             genero_badge = f'<span class="perfume-badge badge-genero">{icon_gen} {gen_val}</span>'
 
-            p_100ml_val = r['precio_100ml']
-            p_decant_val = r['precio_decant']
-            p_100ml_str = fmt_ars(p_100ml_val)
-            p_decant_str = fmt_ars(p_decant_val)
-            cap_ml = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
-            cnt_decants = r.get("decants_10ml_preparados", 0)
-            cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
-
-            if cnt_decants > 0 or cnt_ml_ab >= 10:
-                stock_dec_html = '<span class="stock-badge-green"> (Disponible)</span>'
-            else:
-                stock_dec_html = '<span class="stock-badge-red"> (A pedido)</span>'
-
             txt_sen = r['estado']
             nombre_vis = r["nombre_catalogo"]
+            cap_ml = limpiar_int_ml(r.get("capacidad_ml", 100), 100)
+            en_stock = (txt_sen == "En Stock")
+
+            if en_stock:
+                p_100ml_val = r['precio_100ml']
+                p_decant_val = r['precio_decant']
+                p_100ml_str = fmt_ars(p_100ml_val)
+                p_decant_str = fmt_ars(p_decant_val)
+                cnt_decants = r.get("decants_10ml_preparados", 0)
+                cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
+
+                if cnt_decants > 0 or cnt_ml_ab >= 10:
+                    stock_dec_html = '<span class="stock-badge-green"> (Disponible)</span>'
+                else:
+                    stock_dec_html = '<span class="stock-badge-red"> (A pedido)</span>'
+
+                precios_card_html = f"""
+                <div style="margin-top: 10px;">
+                    <div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div>
+                    <div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div>
+                </div>
+                """
+            else:
+                msg_consultar = urllib.parse.quote(f"Hola Sebastián! Quisiera consultar el precio y disponibilidad de {nombre_vis} ({cap_ml}ml) que figura a pedido.")
+                link_wa_seb = f"https://wa.me/{SOCIOS_WHATSAPP['Sebastián Agüero']}?text={msg_consultar}"
+                
+                precios_card_html = f"""
+                <div style="margin-top: 10px;">
+                    <div>Precio: <a href="{link_wa_seb}" target="_blank" style="color: #8C6D53; font-weight: 600; text-decoration: underline;">A consultar</a></div>
+                </div>
+                """
 
             col_card_1, col_card_2 = st.columns([1, 3])
             with col_card_1:
@@ -1080,30 +1098,35 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                 else:
                     st.markdown("<h2 style='text-align: center; color: #7A5C47;'>✨</h2>", unsafe_allow_html=True)
             with col_card_2:
-                card_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="perfume-badge">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}<div style="margin-top: 10px;"><div>Frasco {cap_ml}ml: <span class="perfume-price">{p_100ml_str}</span></div><div>Decant 10ml: <span class="perfume-price">{p_decant_str}</span>{stock_dec_html}</div></div></div>'
+                card_html = f'<div class="perfume-card"><div class="perfume-title">{nombre_vis}</div><span class="perfume-badge">{txt_sen}</span>{genero_badge}{tipo_html}{notas_html}{precios_card_html}</div>'
                 st.markdown(card_html, unsafe_allow_html=True)
 
-                col_btn_c1, col_btn_c2 = st.columns(2)
-                with col_btn_c1:
-                    if st.button(f"Añadir Frasco {cap_ml}ml", key=f"add_frasco_{r['id']}"):
-                        st.session_state.carrito_cliente.append({
-                            "nombre": nombre_vis,
-                            "presentacion": f"Frasco Cerrado ({cap_ml}ml)",
-                            "cantidad": 1,
-                            "precio": p_100ml_val
-                        })
-                        st.success(f"¡{nombre_vis} ({cap_ml}ml) agregado!")
-                        st.rerun()
-                with col_btn_c2:
-                    if st.button(f"Añadir Decant 10ml", key=f"add_decant_{r['id']}"):
-                        st.session_state.carrito_cliente.append({
-                            "nombre": nombre_vis,
-                            "presentacion": "Decant 10ml",
-                            "cantidad": 1,
-                            "precio": p_decant_val
-                        })
-                        st.success(f"¡{nombre_vis} (Decant 10ml) agregado!")
-                        st.rerun()
+                if en_stock:
+                    col_btn_c1, col_btn_c2 = st.columns(2)
+                    with col_btn_c1:
+                        if st.button(f"Añadir Frasco {cap_ml}ml", key=f"add_frasco_{r['id']}"):
+                            st.session_state.carrito_cliente.append({
+                                "nombre": nombre_vis,
+                                "presentacion": f"Frasco Cerrado ({cap_ml}ml)",
+                                "cantidad": 1,
+                                "precio": p_100ml_val
+                            })
+                            st.success(f"¡{nombre_vis} ({cap_ml}ml) agregado!")
+                            st.rerun()
+                    with col_btn_c2:
+                        if st.button(f"Añadir Decant 10ml", key=f"add_decant_{r['id']}"):
+                            st.session_state.carrito_cliente.append({
+                                "nombre": nombre_vis,
+                                "presentacion": "Decant 10ml",
+                                "cantidad": 1,
+                                "precio": p_decant_val
+                            })
+                            st.success(f"¡{nombre_vis} (Decant 10ml) agregado!")
+                            st.rerun()
+                else:
+                    msg_consultar_btn = urllib.parse.quote(f"Hola Sebastián! Quisiera consultar stock y precio de {nombre_vis}.")
+                    link_wa_btn_seb = f"https://wa.me/{SOCIOS_WHATSAPP['Sebastián Agüero']}?text={msg_consultar_btn}"
+                    st.markdown(f'<a href="{link_wa_btn_seb}" target="_blank" class="btn-whatsapp">💬 Consultar con Sebastián</a>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # MODO 2: PANEL DE ADMINISTRADOR (RESTRINGIDO)

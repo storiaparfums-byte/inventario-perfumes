@@ -39,9 +39,9 @@ USUARIOS_SOCIOS = {
 }
 
 SOCIOS_WHATSAPP = {
-    "Franco Navarrete": "5492613350949", # Guaymallén - Godoy Cruz
-    "Sebastián Agüero": "5492615913895", # Luján - Godoy Cruz
-    "Tomás Cubillos": "5492616621668"  # Centro - Las Heras
+    "Franco Navarrete": "5492613350949",
+    "Sebastián Agüero": "5492615913895",
+    "Tomás Cubillos": "5492616621668"
 }
 
 SOCIOS_ZONAS = {
@@ -64,7 +64,6 @@ CATEGORIAS = [
 
 CLAVE_ADMIN_MASTER = "1234"
 
-# Banner por defecto incrustado en Base64 para garantizar visualización inmediata
 BANNER_DEFAULT_BASE64 = (
     "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QAuRXhpZgAATU0AKgAAAAgAAkAAAwABAAEAAAA"
     "EAAAAAwABAAAAEAAAAAEAAwABAAAAEAAAAAEGAwABAAAAAQAAABgDAgABAAAAAQAAAEgGAwABAAAAAQAAAA"
@@ -107,7 +106,7 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------
-# FUNCIONES AUXILIARES DE MONEDA, FORMATO Y TELEFONÍA
+# FUNCIONES AUXILIARES
 # ---------------------------------------------------------
 def redondear_monto(monto, base=100):
     try:
@@ -153,7 +152,7 @@ def formatear_celular_wa(numero_str):
     return num
 
 # ---------------------------------------------------------
-# ESTILOS CSS PERSONALIZADOS (ESTÉTICA DE LUJO Y MINIMALISMO)
+# ESTILOS CSS
 # ---------------------------------------------------------
 st.markdown("""
     <style>
@@ -186,7 +185,6 @@ st.markdown("""
         font-size: 0.85rem !important;
     }
 
-    /* Tarjetas tipo Escaparate de Lujo */
     .perfume-card {
         background-color: #FFFFFF !important;
         border: 1px solid #EFECE6 !important;
@@ -268,7 +266,6 @@ st.markdown("""
         box-shadow: 0 10px 30px rgba(74, 59, 50, 0.08);
     }
 
-    /* Botones refinados y minimalistas */
     .stButton>button {
         background-color: #4A3B32 !important;
         color: #FFFFFF !important;
@@ -485,7 +482,7 @@ def init_db():
 init_db()
 
 # ---------------------------------------------------------
-# CARGA DE DATOS DE LA BASE DE DATOS
+# CARGA DE DATOS
 # ---------------------------------------------------------
 def cargar_datos_stock():
     df = fetch_df("SELECT * FROM stock")
@@ -587,7 +584,7 @@ def extraer_perfume_y_precio(linea):
     return None, None, 100
 
 # ---------------------------------------------------------
-# GENERACIÓN DE PDFS ROBUSTOS
+# GENERACIÓN DE PDFS
 # ---------------------------------------------------------
 def generar_pdf_catalogo(df_cat):
     buffer = io.BytesIO()
@@ -916,7 +913,6 @@ if "socio_autenticado" not in st.session_state:
 if "carrito_cliente" not in st.session_state:
     st.session_state.carrito_cliente = []
 
-# Encabezado minimalista y elegante
 st.markdown("<h1 style='text-align: center; margin-bottom: 0px; font-weight: 300; letter-spacing: 6px;'>S T O R I A</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #8C6D53; letter-spacing: 4px; font-size: 0.75rem; text-transform: uppercase;'>P A R F U M S</p>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #7A5C47; font-style: italic; font-size: 0.85rem; margin-top: -8px; letter-spacing: 1px;'>Cada fragancia cuenta una historia</p>", unsafe_allow_html=True)
@@ -930,11 +926,10 @@ modo_acceso = st.sidebar.radio(
 )
 
 # ---------------------------------------------------------
-# MODO 1: CATÁLOGO PÚBLICO CLIENTE (ACCESO LIBRE)
+# MODO 1: CATÁLOGO PÚBLICO CLIENTE
 # ---------------------------------------------------------
 if modo_acceso == "📖 Catálogo Clientes (Libre)":
     
-    # --- BARRA LATERAL IZQUIERDA (CARRITO) ---
     with st.sidebar:
         st.markdown("---")
         st.markdown("### 🛒 Tu Carrito")
@@ -974,7 +969,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         else:
             st.info("Tu carrito está vacío. Explora el escaparate.")
 
-    # --- BANNER DISCRETO Y ELEGANTE SI HAY PRODUCTOS ---
     total_cant_items = sum(i['cantidad'] for i in st.session_state.carrito_cliente)
     if total_cant_items > 0:
         total_monto_carrito = sum(i['precio'] * i['cantidad'] for i in st.session_state.carrito_cliente)
@@ -988,7 +982,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             </div>
         """, unsafe_allow_html=True)
 
-    # --- RENDERIZADO DEL BANNER DE PORTADA (USANDO st.image NATIVO) ---
     if banner_portada_url and banner_portada_url.strip() != "":
         try:
             if banner_portada_url.startswith("data:image"):
@@ -1002,12 +995,9 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
 
     st.markdown("---")
 
-    # Carga de catálogo general para el listado de clientes (EXCLUSIVAMENTE EN STOCK)
     df_cat_base_gen = cargar_datos_stock()
     if not df_cat_base_gen.empty:
         df_cat_base_gen["estado"] = df_cat_base_gen["estado"].replace("Disponible en Proveedor", "A pedido")
-        
-        # EXCLUSIÓN ESTRICTA: Solo mostrar y filtrar perfumes que están físicamente en stock
         df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["estado"].astype(str).str.strip() == "En Stock"]
         
         df_cat_base_gen["costo_usd"] = pd.to_numeric(df_cat_base_gen["costo_usd"], errors='coerce').fillna(0.0)
@@ -1038,15 +1028,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             marcas_disponibles = ["Todas las marcas"] + sorted(list(set(df_cat_base_gen["tipo"].dropna().unique())))
             filtro_marca = st.selectbox("🏷️ Marca / Casa:", marcas_disponibles)
         with col_f4:
-            orden_filtro_cli = st.selectbox(
-                "🔀 Ordenar:",
-                [
-                    "Recién Ingresados",
-                    "Precio: Menor a Mayor",
-                    "Precio: Mayor a Menor"
-                ],
-                key="orden_filtro_cli"
-            )
+            orden_filtro_cli = st.selectbox("🔀 Ordenar:", ["Recién Ingresados", "Precio: Menor a Mayor", "Precio: Mayor a Menor"], key="orden_filtro_cli")
 
         if busq_cli:
             df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["nombre_catalogo"].astype(str).str.contains(busq_cli, case=False, na=False)]
@@ -1055,7 +1037,6 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
         if filtro_marca != "Todas las marcas":
             df_cat_base_gen = df_cat_base_gen[df_cat_base_gen["tipo"] == filtro_marca]
 
-        # Aplicar ordenamiento estricto sobre el stock disponible
         if orden_filtro_cli == "Precio: Menor a Mayor":
             df_cat_base_gen = df_cat_base_gen.sort_values(by="precio_100ml", ascending=True).reset_index(drop=True)
         elif orden_filtro_cli == "Precio: Mayor a Menor":
@@ -1084,10 +1065,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
             cnt_decants = r.get("decants_10ml_preparados", 0)
             cnt_ml_ab = r.get("ml_disponibles_abiertos", 0)
 
-            if cnt_decants > 0 or cnt_ml_ab >= 10:
-                stock_dec_html = '<span class="stock-badge-green"> (Disponible)</span>'
-            else:
-                stock_dec_html = '<span class="stock-badge-red"> (A pedido)</span>'
+            stock_dec_html = '<span class="stock-badge-green"> (Disponible)</span>' if (cnt_decants > 0 or cnt_ml_ab >= 10) else '<span class="stock-badge-red"> (A pedido)</span>'
 
             precios_card_html = f"""
             <div style="margin-top: 10px;">
@@ -1132,7 +1110,7 @@ if modo_acceso == "📖 Catálogo Clientes (Libre)":
                         st.rerun()
 
 # ---------------------------------------------------------
-# MODO 2: PANEL DE ADMINISTRADOR (RESTRINGIDO)
+# MODO 2: PANEL DE ADMINISTRADOR
 # ---------------------------------------------------------
 else:
     st.sidebar.markdown("---")
@@ -1181,7 +1159,7 @@ else:
 
         st.sidebar.caption(f"💵 Dólar Sistema: **{fmt_ars(dolar_hoy)}**")
 
-        # --- SECCIÓN: STOCK Y PRECIOS ---
+        # --- SECCIÓN: STOCK & PRECIOS ---
         if seccion_admin == "📦 Stock & Precios":
             st.header("📦 Inventario Global")
             
@@ -1292,4 +1270,764 @@ else:
             st.info("💡 Sube una imagen desde tu dispositivo para fijarla como banner principal en la portada del catálogo.")
 
             with st.form("form_banner_portada"):
-                banner_file = st.file_uploader("Subir
+                banner_file = st.file_uploader("Subir imagen para el Banner (JPG/PNG)", type=["jpg", "jpeg", "png"])
+                url_banner_input = st.text_input("O pega una URL pública de imagen:", value="", placeholder="https://...")
+                
+                btn_save_banner = st.form_submit_button("💾 Guardar Banner")
+
+                if btn_save_banner:
+                    final_url = banner_portada_url
+                    if banner_file is not None:
+                        bytes_img = banner_file.read()
+                        mime_t = banner_file.type if banner_file.type else "image/jpeg"
+                        final_url = f"data:{mime_t};base64," + base64.b64encode(bytes_img).decode('utf-8')
+                    elif url_banner_input.strip() != "":
+                        final_url = url_banner_input.strip()
+
+                    guardar_config(dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase, final_url)
+                    st.success("¡Banner de portada actualizado con éxito!")
+                    st.rerun()
+
+            if st.button("🗑️ Quitar Banner Actual"):
+                guardar_config(dolar_hoy, margen_100_gen, margen_dec_gen, costo_envase, "")
+                st.success("Banner removido.")
+                st.rerun()
+
+            if banner_portada_url and banner_portada_url.strip() != "":
+                st.markdown("---")
+                st.subheader("👁️ Vista Previa Actual:")
+                try:
+                    if banner_portada_url.startswith("data:image"):
+                        header, encoded = banner_portada_url.split(",", 1)
+                        img_bytes = base64.b64decode(encoded)
+                        st.image(img_bytes, use_container_width=True)
+                    else:
+                        st.image(banner_portada_url, use_container_width=True)
+                except Exception:
+                    pass
+
+        # --- SECCIÓN: DESTACADOS PORTADA ---
+        elif seccion_admin == "✨ Destacados Portada":
+            st.header("✨ Configurar Destacados de Portada")
+            st.info("💡 Selecciona qué fragancias deseas destacar (si no hay un banner de imagen fija activo).")
+
+            df_dest_conf = cargar_datos_stock()
+
+            if not df_dest_conf.empty:
+                destacados_actuales = df_dest_conf[df_dest_conf["destacado_portada"] == True]["id"].tolist()
+                
+                st.subheader(f"Fragancias actualmente destacadas ({len(destacados_actuales)}):")
+                if destacados_actuales:
+                    for id_f in destacados_actuales:
+                        row_f = df_dest_conf[df_dest_conf["id"] == id_f]
+                        if not row_f.empty:
+                            st.markdown(f"⭐ **{row_f.iloc[0]['nombre_catalogo']}** ({row_f.iloc[0]['tipo']})")
+
+                st.markdown("---")
+                with st.form("form_destacados_portada"):
+                    opciones_perf = df_dest_conf["nombre_catalogo"].tolist()
+                    default_sel = df_dest_conf[df_dest_conf["destacado_portada"] == True]["nombre_catalogo"].tolist()
+                    
+                    seleccionados_portada = st.multiselect("Selecciona fragancias para la portada:", options=opciones_perf, default=default_sel)
+                    btn_guardar_dest = st.form_submit_button("💾 Guardar Destacados de Portada")
+                    
+                    if btn_guardar_dest:
+                        execute_query("UPDATE stock SET destacado_portada = FALSE")
+                        if seleccionados_portada:
+                            for nom_sel in seleccionados_portada:
+                                execute_query("UPDATE stock SET destacado_portada = TRUE WHERE nombre_comercial = :nom OR nombre = :nom", {"nom": nom_sel})
+                        st.success("¡Destacados de portada actualizados con éxito!")
+                        st.rerun()
+            else:
+                st.info("No hay productos cargados en el inventario.")
+
+        # --- SECCIÓN: PRESUPUESTOS ---
+        elif seccion_admin == "📋 Crear Presupuesto":
+            st.header("📋 Generar Presupuesto")
+            
+            col_pr1, col_pr2, col_pr3 = st.columns(3)
+            with col_pr1:
+                nombre_cliente = st.text_input("Nombre del Cliente / Contacto:", value="Cliente")
+            with col_pr2:
+                celular_cliente = st.text_input("Celular del Cliente (Ej: 2611234567):", placeholder="Ej: 2611234567")
+            with col_pr3:
+                socio_presupuesto = st.selectbox("👤 Socio Vendedor (Obligatorio):", options=SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
+
+            df_p = cargar_datos_stock()
+            
+            if not df_p.empty:
+                df_p["costo_usd"] = pd.to_numeric(df_p["costo_usd"], errors='coerce').fillna(0.0)
+                df_p["capacidad_ml"] = df_p["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
+                df_p["margen_100ml_custom"] = pd.to_numeric(df_p["margen_100ml_custom"], errors='coerce')
+                df_p["margen"] = df_p["margen_100ml_custom"].fillna(margen_100_gen)
+                
+                df_p["precio_100ml_raw"] = (df_p["costo_usd"] * dolar_hoy) * (1 + (df_p["margen"] / 100))
+                df_p["precio_100ml"] = df_p["precio_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
+                
+                df_p["costo_liquido_10ml"] = df_p.apply(
+                    lambda r: ((r["costo_usd"] * dolar_hoy) / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_usd"] * dolar_hoy * 0.10), axis=1
+                )
+                df_p["precio_decant_raw"] = (df_p["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df_p["precio_decant"] = df_p["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
+
+                if "items_presupuesto" not in st.session_state:
+                    st.session_state.items_presupuesto = []
+                    
+                p_sel = st.selectbox("Perfume:", df_p["nombre_catalogo"].tolist())
+                p_data_temp = df_p[df_p["nombre_catalogo"] == p_sel].iloc[0]
+                cap_temp = limpiar_int_ml(p_data_temp.get("capacidad_ml", 100), 100)
+
+                with st.form("form_item_presupuesto"):
+                    col_pitem1, col_pitem2 = st.columns([2, 1])
+                    with col_pitem1:
+                        pres_sel = st.selectbox("Presentación:", [f"Frasco Cerrado ({cap_temp}ml)", "Decant 10ml"])
+                    with col_pitem2:
+                        cant_sel = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+                        desc_individual = st.number_input("Descuento Individual ($ ARS):", min_value=0.0, value=0.0, step=500.0)
+                        
+                    add_item = st.form_submit_button("➕ Agregar a la Lista")
+                    
+                    if add_item:
+                        p_unit_base = p_data_temp["precio_100ml"] if "Frasco" in pres_sel else p_data_temp["precio_decant"]
+                        p_unit_final = redondear_monto(max(0.0, p_unit_base - desc_individual), 100)
+                        st.session_state.items_presupuesto.append({
+                            "nombre": p_sel, "presentacion": pres_sel,
+                            "cantidad": cant_sel, "precio_unitario": p_unit_final, "subtotal": p_unit_final * cant_sel
+                        })
+                        st.success(f"Agregado {p_sel}")
+                        st.rerun()
+                        
+                if st.session_state.items_presupuesto:
+                    st.subheader("🛒 Items en el Presupuesto")
+                    
+                    for idx_p, item_p in enumerate(st.session_state.items_presupuesto):
+                        col_pi1, col_pi2, col_pi3, col_pi4, col_pi5 = st.columns([3, 2, 1, 2, 1])
+                        with col_pi1:
+                            st.write(f"**{item_p['nombre']}**")
+                        with col_pi2:
+                            st.write(f"{item_p['presentacion']}")
+                        with col_pi3:
+                            st.write(f"x{item_p['cantidad']}")
+                        with col_pi4:
+                            st.write(f"{fmt_ars(item_p['subtotal'])}")
+                        with col_pi5:
+                            if st.button("🗑️", key=f"btn_del_p_item_{idx_p}"):
+                                st.session_state.items_presupuesto.pop(idx_p)
+                                st.rerun()
+
+                    subtotal_pres = sum(i["subtotal"] for i in st.session_state.items_presupuesto)
+
+                    st.markdown("---")
+                    st.subheader("🎁 Descuento General sobre la Compra")
+                    
+                    tipo_descuento = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo Manual ($ ARS)", "Descuento en Lista (%)", "Porcentaje Personalizado (%)"], horizontal=True)
+                    monto_desc_pres = 0.0
+                    
+                    if tipo_descuento == "Descuento en Lista (%)":
+                        pct_desc = st.selectbox("Selecciona Porcentaje:", [0, 5, 10, 15, 20], index=0)
+                        monto_desc_pres = subtotal_pres * (pct_desc / 100.0)
+                    elif tipo_descuento == "Monto Fijo Manual ($ ARS)":
+                        monto_manual = st.number_input("Ingresa monto en Pesos ($ ARS):", min_value=0.0, max_value=float(subtotal_pres), value=0.0, step=500.0)
+                        monto_desc_pres = float(monto_manual)
+                    elif tipo_descuento == "Porcentaje Personalizado (%)":
+                        pct_manual = st.number_input("Ingresa porcentaje exacto (%):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
+                        monto_desc_pres = subtotal_pres * (pct_manual / 100.0)
+
+                    total_pres = redondear_monto(max(0.0, subtotal_pres - monto_desc_pres), 100)
+                    
+                    col_tot1, col_tot2, col_tot3 = st.columns(3)
+                    with col_tot1:
+                        st.metric("Subtotal", fmt_ars(subtotal_pres))
+                    with col_tot2:
+                        st.metric("Descuento", f"-{fmt_ars(monto_desc_pres)}")
+                    with col_tot3:
+                        st.metric("TOTAL FINAL", fmt_ars(total_pres))
+                    
+                    pdf_pres_bytes = generar_pdf_presupuesto(nombre_cliente, celular_cliente, socio_presupuesto, st.session_state.items_presupuesto, subtotal_pres, monto_desc_pres, total_pres)
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        st.download_button(
+                            label="📄 Descargar Presupuesto PDF",
+                            data=pdf_pres_bytes,
+                            file_name=f"Presupuesto_{nombre_cliente}_{socio_presupuesto}.pdf",
+                            mime="application/pdf"
+                        )
+                    with col_btn2:
+                        chk_limpiar_p = st.checkbox("⚠️ ¿Confirmar limpieza de lista?", key="chk_clear_presupuesto")
+                        if st.button("🗑️ Limpiar Lista Completa"):
+                            if chk_limpiar_p:
+                                st.session_state.items_presupuesto = []
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para limpiar la lista.")
+
+        # --- SECCIÓN: REGISTRAR VENTA ---
+        elif seccion_admin == "🛒 Registrar Venta":
+            st.header("🛒 Registrar Venta Multi-Item")
+            
+            col_vcli1, col_vcli2, col_vcli3 = st.columns(3)
+            with col_vcli1:
+                cliente_venta = st.text_input("Nombre del Cliente:", value="Cliente")
+            with col_vcli2:
+                celular_venta = st.text_input("Número de Celular del Cliente (Ej: 2611234567):", placeholder="Ej: 2611234567")
+            with col_vcli3:
+                socio_vendedor_real = st.selectbox("👤 Socio Vendedor:", options=SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
+
+            df_actual = cargar_datos_stock()
+
+            if not df_actual.empty:
+                df_actual["costo_usd"] = pd.to_numeric(df_actual["costo_usd"], errors='coerce').fillna(0.0)
+                df_actual["capacidad_ml"] = df_actual["capacidad_ml"].apply(lambda v: limpiar_int_ml(v, 100))
+                df_actual["margen_100ml_custom"] = pd.to_numeric(df_actual["margen_100ml_custom"], errors='coerce')
+                df_actual["margen"] = df_actual["margen_100ml_custom"].fillna(margen_100_gen)
+                
+                df_actual["precio_100ml_raw"] = (df_actual["costo_usd"] * dolar_hoy) * (1 + (df_actual["margen"] / 100))
+                df_actual["precio_100ml"] = df_actual["precio_100ml_raw"].apply(lambda x: redondear_monto(x, 100))
+                
+                df_actual["costo_liquido_10ml"] = df_actual.apply(
+                    lambda r: ((r["costo_usd"] * dolar_hoy) / r["capacidad_ml"] * 10) if r["capacidad_ml"] > 0 else (r["costo_usd"] * dolar_hoy * 0.10), axis=1
+                )
+                df_actual["precio_decant_raw"] = (df_actual["costo_liquido_10ml"] + costo_envase) * (1 + (margen_dec_gen / 100))
+                df_actual["precio_decant"] = df_actual["precio_decant_raw"].apply(lambda x: redondear_monto(x, 100))
+
+                if "items_venta" not in st.session_state:
+                    st.session_state.items_venta = []
+
+                p_sel_v = st.selectbox("Perfume a vender:", df_actual["nombre_catalogo"].tolist())
+                p_data_v = df_actual[df_actual["nombre_catalogo"] == p_sel_v].iloc[0]
+                cap_v = limpiar_int_ml(p_data_v.get("capacidad_ml", 100), 100)
+
+                with st.form("form_item_venta"):
+                    st.subheader("➕ Agregar Perfume / Decant a la Venta")
+                    col_vi1, col_vi2 = st.columns([2, 1])
+                    with col_vi1:
+                        pres_sel_v = st.selectbox("Presentación:", [f"Frasco Cerrado ({cap_v}ml)", "Decant 10ml (Listo)", "Descontar 10ml de frasco abierto"])
+                    with col_vi2:
+                        cant_sel_v = st.number_input("Cantidad unidades:", min_value=1, value=1, step=1)
+                        desc_ind_v = st.number_input("Descuento Individual ($ ARS):", min_value=0.0, value=0.0, step=500.0)
+                        dias_estimados_uso = st.selectbox("⏱️ Tiempo estimado de uso:", [1, 30, 60, 90, 120, 180], index=3)
+                        
+                    add_vitem = st.form_submit_button("➕ Agregar a la Venta")
+
+                    if add_vitem:
+                        p_unit_base = p_data_v["precio_100ml"] if "Frasco" in pres_sel_v else p_data_v["precio_decant"]
+                        p_unit_final = redondear_monto(max(0.0, p_unit_base - desc_ind_v), 100)
+                        
+                        st.session_state.items_venta.append({
+                            "id_producto": int(p_data_v["id"]),
+                            "nombre": p_sel_v,
+                            "presentacion": pres_sel_v,
+                            "cantidad": cant_sel_v,
+                            "precio_unitario": p_unit_final,
+                            "subtotal": p_unit_final * cant_sel_v,
+                            "dias_estimados": dias_estimados_uso,
+                            "capacidad_ml": cap_v,
+                            "costo_usd": float(p_data_v.get("costo_usd", 0.0))
+                        })
+                        st.success(f"Agregado {p_sel_v}")
+                        st.rerun()
+
+                if st.session_state.items_venta:
+                    st.markdown("---")
+                    st.subheader("🛒 Resumen de la Venta a Confirmar")
+                    
+                    for idx_v, item_v in enumerate(st.session_state.items_venta):
+                        col_vi_1, col_vi_2, col_vi_3, col_vi_4, col_vi_5 = st.columns([3, 2, 1, 2, 1])
+                        with col_vi_1:
+                            st.write(f"**{item_v['nombre']}**")
+                        with col_vi_2:
+                            st.write(f"{item_v['presentacion']}")
+                        with col_vi_3:
+                            st.write(f"x{item_v['cantidad']}")
+                        with col_vi_4:
+                            st.write(f"{fmt_ars(item_v['subtotal'])}")
+                        with col_vi_5:
+                            if st.button("🗑️", key=f"btn_del_v_item_{idx_v}"):
+                                st.session_state.items_venta.pop(idx_v)
+                                st.rerun()
+
+                    subtotal_v = sum(i["subtotal"] for i in st.session_state.items_venta)
+
+                    st.subheader("🎁 Descuento General sobre Total de Venta")
+                    tipo_desc_v = st.radio("Tipo de Descuento General:", ["Sin Descuento Extra", "Monto Fijo en Pesos ($ ARS)", "Porcentaje Personalizado (%)"], horizontal=True)
+                    
+                    monto_desc_v = 0.0
+                    if tipo_desc_v == "Monto Fijo en Pesos ($ ARS)":
+                        monto_desc_v = float(st.number_input("Monto en Pesos ($ ARS):", min_value=0.0, max_value=float(subtotal_v), value=0.0, step=500.0))
+                    elif tipo_desc_v == "Porcentaje Personalizado (%)":
+                        pct_v = st.number_input("Porcentaje (%):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
+                        monto_desc_v = subtotal_v * (pct_v / 100.0)
+
+                    total_v = redondear_monto(max(0.0, subtotal_v - monto_desc_v), 100)
+
+                    col_vtot1, col_vtot2, col_vtot3 = st.columns(3)
+                    with col_vtot1:
+                        st.metric("Subtotal Venta", fmt_ars(subtotal_v))
+                    with col_vtot2:
+                        st.metric("Descuento Total", f"-{fmt_ars(monto_desc_v)}")
+                    with col_vtot3:
+                        st.metric("TOTAL REAL A COBRAR", fmt_ars(total_v))
+
+                    st.markdown("---")
+                    col_vbtn1, col_vbtn2 = st.columns(2)
+                    
+                    with col_vbtn1:
+                        if st.button("🚀 Confirmar Venta, Descontar Stock & Registrar Ingreso"):
+                            fecha_actual = datetime.now()
+                            fecha_actual_str = fecha_actual.strftime("%Y-%m-%d %H:%M:%S")
+                            factor_descuento = (total_v / subtotal_v) if subtotal_v > 0 else 1.0
+
+                            for item in st.session_state.items_venta:
+                                id_p = item["id_producto"]
+                                df_stock_p = fetch_df("SELECT botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, capacidad_ml FROM stock WHERE id = :id_p", {"id_p": id_p})
+                                
+                                if not df_stock_p.empty:
+                                    r_p = df_stock_p.iloc[0]
+                                    botellas = int(r_p["botellas_100ml_cerradas"])
+                                    ml = int(r_p["ml_disponibles_abiertos"])
+                                    decants = int(r_p["decants_10ml_preparados"])
+                                    cap_tot = limpiar_int_ml(r_p["capacidad_ml"], 100)
+                                    cant = item["cantidad"]
+                                    pres = item["presentacion"]
+                                    monto_cobrado_real_item = redondear_monto(item['subtotal'] * factor_descuento, 100)
+
+                                    if "Frasco" in pres:
+                                        nuevas_botellas = max(0, botellas - cant)
+                                        nuevo_est = "En Stock" if (nuevas_botellas > 0 or decants > 0 or ml >= 10) else "A pedido"
+                                        execute_query('''
+                                            UPDATE stock 
+                                            SET botellas_100ml_cerradas = :nbot, estado = :est, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
+                                            WHERE id = :id_p
+                                        ''', {"nbot": nuevas_botellas, "est": nuevo_est, "id_p": id_p})
+
+                                    elif "Listo" in pres:
+                                        nuevos_decants = max(0, decants - cant)
+                                        nuevo_est = "En Stock" if (nuevos_decants > 0 or botellas > 0 or ml >= 10) else "A pedido"
+                                        execute_query('''
+                                            UPDATE stock 
+                                            SET decants_10ml_preparados = :ndec, estado = :est, monto_senado_ars = 0, cliente_senado = '', socio_asignado = '' 
+                                            WHERE id = :id_p
+                                        ''', {"ndec": nuevos_decants, "est": nuevo_est, "id_p": id_p})
+
+                                    elif "abierto" in pres:
+                                        ml_necesarios = cant * 10
+                                        if ml >= ml_necesarios:
+                                            nuevos_ml = ml - ml_necesarios
+                                            nuevo_est = "En Stock" if (nuevos_ml >= 10 or botellas > 0 or decants > 0) else "A pedido"
+                                            execute_query("UPDATE stock SET ml_disponibles_abiertos = :nml, estado = :est, monto_senado_ars = 0, socio_asignado = '' WHERE id = :id_p", {"nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
+                                        elif botellas > 0:
+                                            nuevas_bot = botellas - 1
+                                            nuevos_ml = ml + cap_tot - ml_necesarios
+                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml >= 10) else "A pedido"
+                                            execute_query("UPDATE stock SET botellas_100ml_cerradas = :nbot, ml_disponibles_abiertos = :nml, estado = :est WHERE id = :id_p", {"nbot": nuevas_bot, "nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
+
+                                    info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
+                                    execute_query('''
+                                        INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad) 
+                                        VALUES (:fec, :perf, :soc, :tip, :mon, :idp, :pres, :cant)
+                                    ''', {"fec": fecha_actual_str, "perf": item['nombre'], "soc": socio_vendedor_real, "tip": f"{pres} (x{cant}) - {info_cli}", "mon": monto_cobrado_real_item, "idp": id_p, "pres": pres, "cant": cant})
+
+                                    dias_u = item.get("dias_estimados", 90)
+                                    fecha_rec = (fecha_actual + timedelta(days=dias_u)).strftime("%Y-%m-%d")
+                                    execute_query('''
+                                        INSERT INTO clientes_seguimiento (fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                        VALUES (:fcomp, :cnom, :ccel, :svend, :perf, :pres, :dias, :frec, 'Pendiente')
+                                    ''', {"fcomp": fecha_actual.strftime("%Y-%m-%d"), "cnom": cliente_venta, "ccel": celular_venta, "svend": socio_vendedor_real, "perf": item['nombre'], "pres": pres, "dias": dias_u, "frec": fecha_rec})
+
+                            st.session_state.items_venta = []
+                            st.success(f"¡Venta registrada con éxito!")
+                            st.rerun()
+
+                    with col_vbtn2:
+                        chk_canc_v = st.checkbox("⚠️ ¿Confirmar cancelación?", key="chk_cancel_venta")
+                        if st.button("🗑️ Cancelar / Limpiar Lista Completa"):
+                            if chk_canc_v:
+                                st.session_state.items_venta = []
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
+
+        # --- SECCIÓN: SEGUIMIENTO & CLIENTES ---
+        elif seccion_admin == "💬 Seguimiento & Clientes":
+            st.header("💬 Seguimiento de Clientes & Recordatorios WhatsApp")
+            st.info("💡 Este módulo calcula el tiempo estimado de uso del perfume. Cuando llega la fecha, permite enviar WhatsApp directo o eliminar el registro.")
+
+            df_seg = cargar_seguimiento()
+
+            if not df_seg.empty:
+                hoy_str = datetime.now().strftime("%Y-%m-%d")
+                df_seg["vencido"] = df_seg["fecha_recordatorio"] <= hoy_str
+                df_vencidos = df_seg[df_seg["vencido"] & (df_seg["estado"] == "Pendiente")]
+                df_proximos = df_seg[~df_seg["vencido"] & (df_seg["estado"] == "Pendiente")]
+                df_contactados = df_seg[df_seg["estado"] == "Contactado"]
+
+                st.subheader(f"🚨 Clientes para Contactar Hoy ({len(df_vencidos)})")
+                if not df_vencidos.empty:
+                    for _, row_c in df_vencidos.iterrows():
+                        msg_auto = f"Hola {row_c['cliente_nombre']}! Te escribimos de STORIA PARFUMS. Esperamos que estés disfrutando tu perfume {row_c['perfume']} ✨. Calculamos que ya debe estar por terminarse o listo para renovar. Te dejamos nuestro catálogo actualizado: {URL_CATALOGO_PUBLICO}"
+                        msg_enc = urllib.parse.quote(msg_auto)
+                        cel_clean = formatear_celular_wa(row_c['cliente_celular'])
+                        
+                        col_seg1, col_seg2 = st.columns([3, 1])
+                        with col_seg1:
+                            st.markdown(f"""
+                            <div style="background-color: #FDF3F2; border-left: 4px solid #C62828; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                                <b>👤 Cliente:</b> {row_c['cliente_nombre']} (Cel: {row_c['cliente_celular']})<br>
+                                <b>🌸 Perfume:</b> {row_c['perfume']} ({row_c['presentacion']})<br>
+                                <b>📅 Fecha Compra:</b> {row_c['fecha_compra']} | <b>Vendedor:</b> {row_c['socio_vendedor']}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_seg2:
+                            if cel_clean:
+                                st.markdown(f'<a href="https://wa.me/{cel_clean}?text={msg_enc}" target="_blank" class="btn-whatsapp">💬 Enviar WhatsApp</a>', unsafe_allow_html=True)
+                            
+                            if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
+                                execute_query("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = :id_seg", {"id_seg": row_c['id']})
+                                st.rerun()
+
+                            confirm_del_seg = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_seg_{row_c['id']}")
+                            if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
+                                if confirm_del_seg:
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = :id_seg", {"id_seg": row_c['id']})
+                                    st.success("Registro eliminado.")
+                                    st.rerun()
+                                else:
+                                    st.warning("Marca la casilla para confirmar.")
+                else:
+                    st.success("🎉 ¡No hay recordatorios pendientes para contactar hoy!")
+
+                st.markdown("---")
+                st.subheader("📅 Próximos Vencimientos Estimados")
+                if not df_proximos.empty:
+                    for _, row_p in df_proximos.iterrows():
+                        col_p1, col_p2 = st.columns([3, 1])
+                        with col_p1:
+                            st.markdown(f"**👤 {row_p['cliente_nombre']}** | {row_p['perfume']} ({row_p['presentacion']}) - Recordatorio: `{row_p['fecha_recordatorio']}`")
+                        with col_p2:
+                            confirm_del_prox = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prox_{row_p['id']}")
+                            if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
+                                if confirm_del_prox:
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = :id_seg", {"id_seg": row_p['id']})
+                                    st.rerun()
+                                else:
+                                    st.warning("Marca la casilla para confirmar.")
+
+                if not df_contactados.empty:
+                    with st.expander("✅ Ver Historial de Clientes Contactados"):
+                        st.dataframe(df_contactados[["fecha_compra", "cliente_nombre", "perfume", "socio_vendedor", "estado"]], use_container_width=True)
+            else:
+                st.info("Aún no hay registros de clientes en el sistema de seguimiento.")
+
+        # --- SECCIÓN: CONTABILIDAD & GASTOS ---
+        elif seccion_admin == "📊 Contabilidad & Gastos":
+            st.header("📊 Contabilidad, Gastos y Balance de Caja")
+            st.info("💡 Lleva el control contable completo con reportes temporales y filtros por socio.")
+
+            with st.expander("➕ Registrar Nuevo Gasto / Egreso"):
+                with st.form("form_egreso", clear_on_submit=True):
+                    col_eg1, col_eg2 = st.columns(2)
+                    with col_eg1:
+                        cat_gasto = st.selectbox("Categoría del Gasto:", ["Envases / Decants", "Bolsas & Packings", "Tarjetas / Etiquetas", "Envíos / Logística", "Compra Stock", "Marketing / Publicidad", "Otros Gastos"])
+                        desc_gasto = st.text_input("Descripción del Gasto:", placeholder="Ej. 100 bolsas kraft personalizadas")
+                    with col_eg2:
+                        monto_gasto = st.number_input("Monto en Pesos ($ ARS):", min_value=0.0, value=0.0, step=500.0)
+                        socio_gasto = st.selectbox("Socio que abonó el gasto:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
+                    
+                    btn_save_eg = st.form_submit_button("💾 Registar Gasto")
+                    if btn_save_eg and monto_gasto > 0:
+                        f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        execute_query("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (:fec, :cat, :desc, :mon, :soc)",
+                                      {"fec": f_hoy, "cat": cat_gasto, "desc": desc_gasto, "mon": monto_gasto, "soc": socio_gasto})
+                        st.success("¡Gasto registrado con éxito!")
+                        st.rerun()
+
+            st.markdown("---")
+            st.subheader("📅 Filtro de Fecha y Socio para Reportes Contables")
+
+            col_cf1, col_cf2 = st.columns([2, 1])
+            with col_cf1:
+                tipo_filtro_f = st.radio("Selecciona Período a consultar:", ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"], horizontal=True)
+            with col_cf2:
+                socio_filtro_contable = st.selectbox("👤 Filtrar Vendedor:", ["Todos los Socios"] + SOCIOS)
+
+            df_hist_c = cargar_historial()
+            df_eg_c = cargar_egresos()
+
+            df_h_filt = df_hist_c.copy()
+            df_e_filt = df_eg_c.copy()
+
+            periodo_txt = "Todo el Histórico"
+
+            if tipo_filtro_f == "Por Mes / Año":
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    mes_sel = st.selectbox("Mes:", list(range(1, 13)), index=datetime.now().month - 1)
+                with col_m2:
+                    anio_sel = st.number_input("Año:", min_value=2020, max_value=2030, value=datetime.now().year)
+
+                periodo_txt = f"{mes_sel}/{anio_sel}"
+                if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.month == mes_sel) & (df_h_filt["fecha_dt"].dt.year == anio_sel)]
+                if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.month == mes_sel) & (df_e_filt["fecha_dt"].dt.year == anio_sel)]
+
+            elif tipo_filtro_f == "Por Día Específico":
+                dia_sel = st.date_input("Selecciona Día:", value=datetime.now().date())
+                dia_str = dia_sel.strftime("%Y-%m-%d")
+                periodo_txt = dia_str
+
+                if not df_h_filt.empty and "fecha" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[df_h_filt["fecha"].astype(str).str.startswith(dia_str)]
+                if not df_e_filt.empty and "fecha" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[df_e_filt["fecha"].astype(str).str.startswith(dia_str)]
+
+            elif tipo_filtro_f == "Rango de Fechas":
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    f_inicio = st.date_input("Fecha Inicio:", value=datetime.now().date() - timedelta(days=30))
+                with col_r2:
+                    f_fin = st.date_input("Fecha Fin:", value=datetime.now().date())
+
+                periodo_txt = f"{f_inicio.strftime('%d/%m/%Y')} al {f_fin.strftime('%d/%m/%Y')}"
+                if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.date >= f_inicio) & (df_h_filt["fecha_dt"].dt.date <= f_fin)]
+                if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.date >= f_inicio) & (df_e_filt["fecha_dt"].dt.date <= f_fin)]
+
+            if socio_filtro_contable != "Todos los Socios":
+                if not df_h_filt.empty and "socio" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[df_h_filt["socio"] == socio_filtro_contable]
+
+            total_ingresos = df_h_filt["monto_ingreso_ars"].sum() if not df_h_filt.empty and "monto_ingreso_ars" in df_h_filt.columns else 0.0
+            total_egresos = df_e_filt["monto_ars"].sum() if not df_e_filt.empty and "monto_ars" in df_e_filt.columns else 0.0
+            ganancia_neta = total_ingresos - total_egresos
+            cant_ventas = len(df_h_filt) if not df_h_filt.empty else 0
+
+            st.markdown("---")
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            with col_m1:
+                st.metric("🟢 Ingresos (Ventas)", fmt_ars(total_ingresos))
+            with col_m2:
+                st.metric("🔴 Egresos (Gastos)", fmt_ars(total_egresos))
+            with col_m3:
+                st.metric("🏆 GANANCIA NETA", fmt_ars(ganancia_neta))
+            with col_m4:
+                st.metric("🛒 Cantidad Ventas", str(cant_ventas))
+
+            st.markdown("---")
+            pdf_contable_bytes = generar_pdf_reporte_contable(socio_filtro_contable, periodo_txt, df_h_filt, df_e_filt, total_ingresos, total_egresos, ganancia_neta)
+            st.download_button(
+                label="📄 Descargar Reporte Contable Completo (PDF)",
+                data=pdf_contable_bytes,
+                file_name=f"Reporte_Contable_Storia_{socio_filtro_contable.replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )
+
+            st.markdown("---")
+            col_tab1, col_tab2 = st.columns(2)
+            with col_tab1:
+                st.subheader("🔴 Egresos del Período")
+                if not df_e_filt.empty:
+                    st.dataframe(df_e_filt[["fecha", "categoria", "descripcion", "monto_ars", "socio_registra"]], use_container_width=True)
+                else:
+                    st.caption("Sin gastos en este período.")
+
+            with col_tab2:
+                st.subheader("🟢 Ventas del Período")
+                if not df_h_filt.empty:
+                    st.dataframe(df_h_filt[["fecha", "perfume", "tipo_movimiento", "socio", "monto_ingreso_ars"]], use_container_width=True)
+                else:
+                    st.caption("Sin ventas en este período.")
+
+        # --- SECCIÓN: ORDEN DE COMPRA PROVEEDOR ---
+        elif seccion_admin == "📦 Orden de Compra Proveedor":
+            st.header("📦 Generar Orden de Compra para Proveedor")
+            st.info("💡 Todos los ítems cargados aquí quedan guardados en la base de datos compartida entre socios.")
+
+            dolar_proveedor = st.number_input(
+                "💵 Cotización Dólar del Proveedor ($ ARS):",
+                min_value=1.0,
+                value=float(dolar_hoy),
+                step=10.0,
+                help="Esta cotización aplica solo para esta Orden de Compra."
+            )
+
+            df_st_oc = cargar_datos_stock()
+
+            tab_oc1, tab_oc2 = st.tabs(["📌 Seleccionar de Stock / Inventario", "➕ Agregar Producto Nuevo (Fuera de Inventario)"])
+
+            with tab_oc1:
+                if not df_st_oc.empty:
+                    p_oc_sel = st.selectbox("Seleccionar perfume del Inventario:", df_st_oc["nombre_catalogo"].tolist())
+                    p_data_oc = df_st_oc[df_st_oc["nombre_catalogo"] == p_oc_sel].iloc[0]
+                    cap_oc = limpiar_int_ml(p_data_oc.get("capacidad_ml", 100), 100)
+
+                    with st.form("form_add_oc_stock", clear_on_submit=True):
+                        col_oc1, col_oc2 = st.columns([2, 1])
+                        with col_oc1:
+                            est_inv = p_data_oc.get("estado", "En Stock")
+                            st.caption(f"📌 **Estado Actual:** {est_inv}")
+                        with col_oc2:
+                            cant_oc = st.number_input("Cantidad a pedir:", min_value=1, value=1, step=1)
+                            costo_override = st.number_input("Costo USD (Lista Proveedor):", min_value=0.0, value=float(p_data_oc["costo_usd"]), step=1.0)
+                        
+                        btn_oc_add = st.form_submit_button("➕ Agregar a la Orden de Compra")
+                        if btn_oc_add:
+                            f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            execute_query('''
+                                INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
+                                VALUES (:fec, :nom, :cap, :cant, :costo, :est, '', :soc)
+                            ''', {"fec": f_now, "nom": p_oc_sel, "cap": cap_oc, "cant": cant_oc, "costo": costo_override, "est": est_inv, "soc": st.session_state.socio_autenticado})
+                            st.success(f"¡{p_oc_sel} agregado a la Orden de Compra!")
+                            st.rerun()
+
+            with tab_oc2:
+                with st.form("form_add_oc_nuevo", clear_on_submit=True):
+                    col_ocn1, col_ocn2 = st.columns(2)
+                    with col_ocn1:
+                        nom_nuevo_oc = st.text_input("Nombre del nuevo perfume:")
+                        cap_nuevo_oc = st.number_input("Capacidad ML:", min_value=10, value=100, step=5)
+                    with col_ocn2:
+                        cant_nuevo_oc = st.number_input("Cantidad a pedir:", min_value=1, value=1, step=1)
+                        costo_nuevo_oc = st.number_input("Costo USD unidad:", min_value=0.0, value=0.0, step=1.0)
+                    
+                    btn_oc_nuevo_add = st.form_submit_button("➕ Agregar Producto Nuevo")
+                    if btn_oc_nuevo_add and nom_nuevo_oc.strip() != "":
+                        f_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        execute_query('''
+                            INSERT INTO ordenes_compra (fecha, nombre, capacidad_ml, cantidad, costo_usd, estado_inventario, detalle_reserva, socio_agrega)
+                            VALUES (:fec, :nom, :cap, :cant, :costo, 'Nuevo', '', :soc)
+                        ''', {"fec": f_now, "nom": nom_nuevo_oc.strip(), "cap": int(cap_nuevo_oc), "cant": cant_nuevo_oc, "costo": costo_nuevo_oc, "soc": st.session_state.socio_autenticado})
+                        st.success(f"¡{nom_nuevo_oc.strip()} agregado a la Orden de Compra!")
+                        st.rerun()
+
+            df_oc_saved = cargar_ordenes_compra()
+
+            if not df_oc_saved.empty:
+                st.markdown("---")
+                st.subheader("📝 Lista Compartida de Orden de Compra (Vista Interna)")
+
+                df_oc_saved["subtotal_usd"] = df_oc_saved["costo_usd"] * df_oc_saved["cantidad"]
+                df_oc_saved["costo_ars_prov"] = df_oc_saved["subtotal_usd"] * dolar_proveedor
+                df_oc_saved["precio_sugerido_ars"] = df_oc_saved["costo_usd"].apply(
+                    lambda c: redondear_monto((c * dolar_proveedor) * (1 + (margen_100_gen / 100)), 100)
+                )
+
+                for idx, row_oc in df_oc_saved.iterrows():
+                    col_oc_i1, col_oc_i2 = st.columns([3, 1])
+                    cap_ml_clean = limpiar_int_ml(row_oc['capacidad_ml'], 100)
+                    with col_oc_i1:
+                        est_badge = f"<b>[{row_oc['estado_inventario']}]</b>"
+                        st.markdown(f"""
+                        <div style="background-color: #FFFFFF; padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #5C4033; border: 1px solid #E6DEC5;">
+                            <b>{row_oc['nombre']}</b> ({cap_ml_clean}ml) x {row_oc['cantidad']} un | {est_badge}<br>
+                            <small>Costo USD: <b>${row_oc['costo_usd']:.2f}</b> | Subtotal USD: <b>${row_oc['subtotal_usd']:.2f}</b> | Costo ARS Prov: <b>{fmt_ars(row_oc['costo_ars_prov'])}</b> | PVP Sugerido: <b>{fmt_ars(row_oc['precio_sugerido_ars'])}</b> | Creado por: {row_oc['socio_agrega']}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_oc_i2:
+                        confirm_del_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_oc_{row_oc['id']}")
+                        if st.button("🗑️ Eliminar", key=f"btn_del_oc_{row_oc['id']}"):
+                            if confirm_del_oc:
+                                execute_query("DELETE FROM ordenes_compra WHERE id = :id_oc", {"id_oc": row_oc['id']})
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
+
+                tot_usd_oc = df_oc_saved["subtotal_usd"].sum()
+                tot_ars_oc = tot_usd_oc * dolar_proveedor
+
+                st.markdown("---")
+                col_octot1, col_octot2 = st.columns(2)
+                with col_octot1:
+                    st.metric("Total Estimado USD", f"${tot_usd_oc:.2f} USD")
+                with col_octot2:
+                    st.metric("Total Estimado ARS (Dólar Prov.)", fmt_ars(tot_ars_oc))
+
+                pdf_oc_bytes = generar_pdf_orden_compra(st.session_state.socio_autenticado, df_oc_saved, tot_usd_oc, tot_ars_oc, dolar_proveedor)
+
+                col_ocbtn1, col_ocbtn2 = st.columns(2)
+                with col_ocbtn1:
+                    st.download_button(
+                        label="📄 Descargar Orden de Compra para Proveedor (PDF)",
+                        data=pdf_oc_bytes,
+                        file_name=f"Orden_Compra_Storia_{datetime.now().strftime('%d_%m_%Y')}.pdf",
+                        mime="application/pdf"
+                    )
+                with col_ocbtn2:
+                    confirm_vaciar_oc = st.checkbox("⚠️ ¿Confirmar eliminación?", key="chk_vaciar_oc_all")
+                    if st.button("🚨 Vaciar Orden de Compra Completa"):
+                        if confirm_vaciar_oc:
+                            execute_query("DELETE FROM ordenes_compra")
+                            st.success("Orden de compra vaciada.")
+                            st.rerun()
+                        else:
+                            st.warning("Marca la casilla para vaciar toda la orden.")
+            else:
+                st.info("No hay ítems agregados en la orden de compra actual.")
+
+        # --- SECCIÓN: AGREGAR PERFUME ---
+        elif seccion_admin == "➕ Agregar Perfume":
+            st.header("➕ Cargar Producto Manual")
+            with st.form("form_alta", clear_on_submit=True):
+                nombre = st.text_input("Nombre del perfume")
+                nombre_comercial = st.text_input("Nombre Comercial (Opcional - Visible en Catálogo):", placeholder="Ej: Nombre limpio sin 'nuevoo'")
+                
+                col_a1, col_a2, col_a3 = st.columns(3)
+                with col_a1:
+                    tipo = st.selectbox("Marca / Categoría", CATEGORIAS, index=0)
+                with col_a2:
+                    genero_sel = st.selectbox("Género", GENEROS, index=0)
+                with col_a3:
+                    capacidad_ml = st.number_input("Capacidad Total en ML", min_value=10, value=100, step=5)
+
+                estado = st.selectbox("Estado inicial", ESTADOS)
+                costo_usd = st.number_input("Costo USD ($)", min_value=0.0, value=0.0, step=1.0)
+                
+                col_st1, col_st2, col_st3 = st.columns(3)
+                with col_st1:
+                    botellas = st.number_input("Frascos Cerrados en Stock", min_value=0, value=1 if estado == "En Stock" else 0)
+                with col_st2:
+                    ml_abiertos = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(capacidad_ml), value=0)
+                with col_st3:
+                    decants = st.number_input("Cantidad Decants 10ml Listos", min_value=0, value=0)
+                
+                st.markdown("---")
+                
+                notas_olfativas = st.text_input("Notas Olfativas (Opcional):", placeholder="Ej. Bergamota, Vainilla, Ámbar")
+                imagen_url = st.text_input("URL Imagen (Opcional):", placeholder="https://ejemplo.com/foto.jpg")
+                destacado_portada_new = st.checkbox("⭐ Destacar en Portada (Escaparate Principal)")
+                
+                if st.form_submit_button("Guardar Perfume"):
+                    if nombre.strip() != "":
+                        df_ex = fetch_df("SELECT id, nombre FROM stock")
+                        nom_norm = normalizar_texto(nombre.strip())
+                        encontrado_id = None
+                        if not df_ex.empty:
+                            for _, r in df_ex.iterrows():
+                                if normalizar_texto(r["nombre"]) == nom_norm:
+                                    encontrado_id = r["id"]
+                                    break
+
+                        if encontrado_id:
+                            execute_query('''
+                                UPDATE stock 
+                                SET tipo = :tipo, genero = :genero, capacidad_ml = :cap, botellas_100ml_cerradas = :bot, ml_disponibles_abiertos = :mlab, 
+                                    decants_10ml_preparados = :dec, costo_usd = :costo, estado = :est,
+                                    notas_olfativas = :notas, imagen_url = :img, nombre_comercial = :nom_com, destacado_portada = :dest
+                                WHERE id = :idp
+                            ''', {"tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url, "nom_com": nombre_comercial.strip(), "dest": destacado_portada_new, "idp": encontrado_id})
+                            st.warning("Producto actualizado sin duplicar.")
+                        else:
+                            execute_query('''
+                                INSERT INTO stock (nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url, destacado_portada)
+                                VALUES (:nom, :nom_com, :tipo, :genero, :cap, :bot, :mlab, :dec, :costo, :est, :notas, :img, :dest)
+                            ''', {"nom": nombre.strip(), "nom_com": nombre_comercial.strip(), "tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url, "dest": destacado_portada_new})
+                            st.success("¡Perfume guardado!")
+                            
+                        st.rerun()
+
+        # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
+        elif seccion_admin == "📄 Cargar PDF Proveedor":
+            st.header("📄 Procesar PDF Proveedor")
+            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, el sistema limpia automáticamente palabras basura (ej. '

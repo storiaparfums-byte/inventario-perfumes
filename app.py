@@ -429,7 +429,7 @@ def init_db():
         '''))
         
         try:
-            conn.execute(text('ALTER TABLE config ADD COLUMN IF NOT EXISTS banner_portada_url TEXT DEFAULT \'\''))
+            conn.execute(text("ALTER TABLE config ADD COLUMN IF NOT EXISTS banner_portada_url TEXT DEFAULT ''"))
         except Exception:
             pass
 
@@ -2022,12 +2022,4 @@ else:
                             execute_query('''
                                 INSERT INTO stock (nombre, nombre_comercial, tipo, genero, capacidad_ml, botellas_100ml_cerradas, ml_disponibles_abiertos, decants_10ml_preparados, costo_usd, estado, notas_olfativas, imagen_url, destacado_portada)
                                 VALUES (:nom, :nom_com, :tipo, :genero, :cap, :bot, :mlab, :dec, :costo, :est, :notas, :img, :dest)
-                            ''', {"nom": nombre.strip(), "nom_com": nombre_comercial.strip(), "tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml), "bot": botellas, "mlab": ml_abiertos, "dec": decants, "costo": costo_usd, "est": estado, "notas": notas_olfativas, "img": imagen_url, "dest": destacado_portada_new})
-                            st.success("¡Perfume guardado!")
-                            
-                        st.rerun()
-
-        # --- SECCIÓN: CARGAR PDF PROVEEDOR ---
-        elif seccion_admin == "📄 Cargar PDF Proveedor":
-            st.header("📄 Procesar PDF Proveedor")
-            st.info("💡 **Sincronización Inteligente:** Al subir el PDF, el sistema limpia automáticamente palabras basura (ej. '
+                            ''', {"nom": nombre.strip(), "nom_com": nombre_comercial.strip(), "tipo": tipo, "genero": genero_sel, "cap": int(capacidad_ml

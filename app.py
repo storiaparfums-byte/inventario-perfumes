@@ -1646,4 +1646,205 @@ else:
                                         elif botellas > 0:
                                             nuevas_bot = botellas - 1
                                             nuevos_ml = ml + cap_tot - ml_necesarios
-                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants >
+                                            nuevo_est = "En Stock" if (nuevas_bot > 0 or decants > 0 or nuevos_ml >= 10) else "A pedido"
+                                            execute_query("UPDATE stock SET botellas_100ml_cerradas = :nbot, ml_disponibles_abiertos = :nml, estado = :est WHERE id = :id_p", {"nbot": nuevas_bot, "nml": nuevos_ml, "est": nuevo_est, "id_p": id_p})
+
+                                    info_cli = f"Cliente: {cliente_venta}" + (f" (Cel: {celular_venta})" if celular_venta else "")
+                                    execute_query('''
+                                        INSERT INTO historial (fecha, perfume, socio, tipo_movimiento, monto_ingreso_ars, id_producto, presentacion, cantidad) 
+                                        VALUES (:fec, :perf, :soc, :tip, :mon, :idp, :pres, :cant)
+                                    ''', {"fec": fecha_actual_str, "perf": item['nombre'], "soc": socio_vendedor_real, "tip": f"{pres} (x{cant}) - {info_cli}", "mon": monto_cobrado_real_item, "idp": id_p, "pres": pres, "cant": cant})
+
+                                    dias_u = item.get("dias_estimados", 90)
+                                    fecha_rec = (fecha_actual + timedelta(days=dias_u)).strftime("%Y-%m-%d")
+                                    execute_query('''
+                                        INSERT INTO clientes_seguimiento (fecha_compra, cliente_nombre, cliente_celular, socio_vendedor, perfume, presentacion, dias_estimados, fecha_recordatorio, estado)
+                                        VALUES (:fcomp, :cnom, :ccel, :svend, :perf, :pres, :dias, :frec, 'Pendiente')
+                                    ''', {"fcomp": fecha_actual.strftime("%Y-%m-%d"), "cnom": cliente_venta, "ccel": celular_venta, "svend": socio_vendedor_real, "perf": item['nombre'], "pres": pres, "dias": dias_u, "frec": fecha_rec})
+
+                            st.session_state.items_venta = []
+                            st.success(f"¡Venta registrada con éxito!")
+                            st.rerun()
+
+                    with col_vbtn2:
+                        chk_canc_v = st.checkbox("⚠️ ¿Confirmar cancelación?", key="chk_cancel_venta")
+                        if st.button("🗑️ Cancelar / Limpiar Lista Completa"):
+                            if chk_canc_v:
+                                st.session_state.items_venta = []
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
+
+        # --- SECCIÓN: SEGUIMIENTO & CLIENTES ---
+        elif seccion_admin == "💬 Seguimiento & Clientes":
+            st.header("💬 Seguimiento de Clientes & Recordatorios WhatsApp")
+            st.info("💡 Este módulo calcula el tiempo estimado de uso del perfume. Cuando llega la fecha, permite enviar WhatsApp directo o eliminar el registro.")
+
+            df_seg = cargar_seguimiento()
+
+            if not df_seg.empty:
+                hoy_str = datetime.now().strftime("%Y-%m-%d")
+                df_seg["vencido"] = df_seg["fecha_recordatorio"] <= hoy_str
+                df_vencidos = df_seg[df_seg["vencido"] & (df_seg["estado"] == "Pendiente")]
+                df_proximos = df_seg[~df_seg["vencido"] & (df_seg["estado"] == "Pendiente")]
+                df_contactados = df_seg[df_seg["estado"] == "Contactado"]
+
+                st.subheader(f"🚨 Clientes para Contactar Hoy ({len(df_vencidos)})")
+                if not df_vencidos.empty:
+                    for _, row_c in df_vencidos.iterrows():
+                        msg_auto = f"Hola {row_c['cliente_nombre']}! Te escribimos de STORIA PARFUMS. Esperamos que estés disfrutando tu perfume {row_c['perfume']} ✨. Calculamos que ya debe estar por terminarse o listo para renovar. Te dejamos nuestro catálogo actualizado: {URL_CATALOGO_PUBLICO}"
+                        msg_enc = urllib.parse.quote(msg_auto)
+                        cel_clean = formatear_celular_wa(row_c['cliente_celular'])
+                        
+                        col_seg1, col_seg2 = st.columns([3, 1])
+                        with col_seg1:
+                            st.markdown(f"""
+                            <div style="background-color: #FDF3F2; border-left: 4px solid #C62828; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                                <b>👤 Cliente:</b> {row_c['cliente_nombre']} (Cel: {row_c['cliente_celular']})<br>
+                                <b>🌸 Perfume:</b> {row_c['perfume']} ({row_c['presentacion']})<br>
+                                <b>📅 Fecha Compra:</b> {row_c['fecha_compra']} | <b>Vendedor:</b> {row_c['socio_vendedor']}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_seg2:
+                            if cel_clean:
+                                st.markdown(f'<a href="https://wa.me/{cel_clean}?text={msg_enc}" target="_blank" class="btn-whatsapp">💬 Enviar WhatsApp</a>', unsafe_allow_html=True)
+                            
+                            if st.button(f"✅ Contactado", key=f"btn_mark_{row_c['id']}"):
+                                execute_query("UPDATE clientes_seguimiento SET estado = 'Contactado' WHERE id = :id_seg", {"id_seg": row_c['id']})
+                                st.rerun()
+
+                            confirm_del_seg = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_seg_{row_c['id']}")
+                            if st.button(f"🗑️ Eliminar", key=f"btn_del_seg_{row_c['id']}"):
+                                if confirm_del_seg:
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = :id_seg", {"id_seg": row_c['id']})
+                                    st.success("Registro eliminado.")
+                                    st.rerun()
+                                else:
+                                    st.warning("Marca la casilla para confirmar.")
+                else:
+                    st.success("🎉 ¡No hay recordatorios pendientes para contactar hoy!")
+
+                st.markdown("---")
+                st.subheader("📅 Próximos Vencimientos Estimados")
+                if not df_proximos.empty:
+                    for _, row_p in df_proximos.iterrows():
+                        col_p1, col_p2 = st.columns([3, 1])
+                        with col_p1:
+                            st.markdown(f"**👤 {row_p['cliente_nombre']}** | {row_p['perfume']} ({row_p['presentacion']}) - Recordatorio: `{row_p['fecha_recordatorio']}`")
+                        with col_p2:
+                            confirm_del_prox = st.checkbox("⚠️ ¿Confirmar eliminación?", key=f"chk_del_prox_{row_p['id']}")
+                            if st.button("🗑️ Eliminar", key=f"btn_del_prox_{row_p['id']}"):
+                                if confirm_del_prox:
+                                    execute_query("DELETE FROM clientes_seguimiento WHERE id = :id_seg", {"id_seg": row_p['id']})
+                                    st.rerun()
+                                else:
+                                    st.warning("Marca la casilla para confirmar.")
+
+                if not df_contactados.empty:
+                    with st.expander("✅ Ver Historial de Clientes Contactados"):
+                        st.dataframe(df_contactados[["fecha_compra", "cliente_nombre", "perfume", "socio_vendedor", "estado"]], use_container_width=True)
+            else:
+                st.info("Aún no hay registros de clientes en el sistema de seguimiento.")
+
+        # --- SECCIÓN: CONTABILIDAD Y GASTOS ---
+        elif seccion_admin == "📊 Contabilidad & Gastos":
+            st.header("📊 Contabilidad, Gastos y Balance de Caja")
+            st.info("💡 Lleva el control contable completo con reportes temporales y filtros por socio.")
+
+            with st.expander("➕ Registrar Nuevo Gasto / Egreso"):
+                with st.form("form_egreso", clear_on_submit=True):
+                    col_eg1, col_eg2 = st.columns(2)
+                    with col_eg1:
+                        cat_gasto = st.selectbox("Categoría del Gasto:", ["Envases / Decants", "Bolsas & Packings", "Tarjetas / Etiquetas", "Envíos / Logística", "Compra Stock", "Marketing / Publicidad", "Otros Gastos"])
+                        desc_gasto = st.text_input("Descripción del Gasto:", placeholder="Ej. 100 bolsas kraft personalizadas")
+                    with col_eg2:
+                        monto_gasto = st.number_input("Monto en Pesos ($ ARS):", min_value=0.0, value=0.0, step=500.0)
+                        socio_gasto = st.selectbox("Socio que abonó el gasto:", SOCIOS, index=SOCIOS.index(st.session_state.socio_autenticado))
+                    
+                    btn_save_eg = st.form_submit_button("💾 Registar Gasto")
+                    if btn_save_eg and monto_gasto > 0:
+                        f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        execute_query("INSERT INTO egresos (fecha, categoria, descripcion, monto_ars, socio_registra) VALUES (:fec, :cat, :desc, :mon, :soc)",
+                                      {"fec": f_hoy, "cat": cat_gasto, "desc": desc_gasto, "mon": monto_gasto, "soc": socio_gasto})
+                        st.success("¡Gasto registrado con éxito!")
+                        st.rerun()
+
+            st.markdown("---")
+            st.subheader("📅 Filtro de Fecha y Socio para Reportes Contables")
+
+            col_cf1, col_cf2 = st.columns([2, 1])
+            with col_cf1:
+                tipo_filtro_f = st.radio("Selecciona Período a consultar:", ["Todo el Histórico", "Por Mes / Año", "Por Día Específico", "Rango de Fechas"], horizontal=True)
+            with col_cf2:
+                socio_filtro_contable = st.selectbox("👤 Filtrar Vendedor:", ["Todos los Socios"] + SOCIOS)
+
+            df_hist_c = cargar_historial()
+            df_eg_c = cargar_egresos()
+
+            df_h_filt = df_hist_c.copy()
+            df_e_filt = df_eg_c.copy()
+
+            periodo_txt = "Todo el Histórico"
+
+            if tipo_filtro_f == "Por Mes / Año":
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    mes_sel = st.selectbox("Mes:", list(range(1, 13)), index=datetime.now().month - 1)
+                with col_m2:
+                    anio_sel = st.number_input("Año:", min_value=2020, max_value=2030, value=datetime.now().year)
+
+                periodo_txt = f"{mes_sel}/{anio_sel}"
+                if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.month == mes_sel) & (df_h_filt["fecha_dt"].dt.year == anio_sel)]
+                if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.month == mes_sel) & (df_e_filt["fecha_dt"].dt.year == anio_sel)]
+
+            elif tipo_filtro_f == "Por Día Específico":
+                dia_sel = st.date_input("Selecciona Día:", value=datetime.now().date())
+                dia_str = dia_sel.strftime("%Y-%m-%d")
+                periodo_txt = dia_str
+
+                if not df_h_filt.empty and "fecha" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[df_h_filt["fecha"].astype(str).str.startswith(dia_str)]
+                if not df_e_filt.empty and "fecha" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[df_e_filt["fecha"].astype(str).str.startswith(dia_str)]
+
+            elif tipo_filtro_f == "Rango de Fechas":
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    f_inicio = st.date_input("Fecha Inicio:", value=datetime.now().date() - timedelta(days=30))
+                with col_r2:
+                    f_fin = st.date_input("Fecha Fin:", value=datetime.now().date())
+
+                periodo_txt = f"{f_inicio.strftime('%d/%m/%Y')} al {f_fin.strftime('%d/%m/%Y')}"
+                if not df_h_filt.empty and "fecha_dt" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[(df_h_filt["fecha_dt"].dt.date >= f_inicio) & (df_h_filt["fecha_dt"].dt.date <= f_fin)]
+                if not df_e_filt.empty and "fecha_dt" in df_e_filt.columns:
+                    df_e_filt = df_e_filt[(df_e_filt["fecha_dt"].dt.date >= f_inicio) & (df_e_filt["fecha_dt"].dt.date <= f_fin)]
+
+            if socio_filtro_contable != "Todos los Socios":
+                if not df_h_filt.empty and "socio" in df_h_filt.columns:
+                    df_h_filt = df_h_filt[df_h_filt["socio"] == socio_filtro_contable]
+
+            total_ingresos = df_h_filt["monto_ingreso_ars"].sum() if not df_h_filt.empty and "monto_ingreso_ars" in df_h_filt.columns else 0.0
+            total_egresos = df_e_filt["monto_ars"].sum() if not df_e_filt.empty and "monto_ars" in df_e_filt.columns else 0.0
+            ganancia_neta = total_ingresos - total_egresos
+            cant_ventas = len(df_h_filt) if not df_h_filt.empty else 0
+
+            st.markdown("---")
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            with col_m1:
+                st.metric("🟢 Ingresos (Ventas)", fmt_ars(total_ingresos))
+            with col_m2:
+                st.metric("🔴 Egresos (Gastos)", fmt_ars(total_egresos))
+            with col_m3:
+                st.metric("🏆 GANANCIA NETA", fmt_ars(ganancia_neta))
+            with col_m4:
+                st.metric("🛒 Cantidad Ventas", str(cant_ventas))
+
+            st.markdown("---")
+            pdf_contable_bytes = generar_pdf_reporte_contable(socio_filtro_contable, periodo_txt, df_h_filt, df_e_filt, total_ingresos, total_egresos, ganancia_neta)
+            st.download_button(
+                label="📄 Descargar Reporte Contable Completo (PDF)",
+                data=pdf_contable_bytes,
+                file_name=

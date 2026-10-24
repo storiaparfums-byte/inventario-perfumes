@@ -2118,37 +2118,53 @@ else:
                 id_mod = int(prod_sel.split(" | ")[0].replace("ID: ", ""))
                 prod_data = df_mod[df_mod['id'] == id_mod].iloc[0]
 
-                val_tipo = prod_data['tipo'] if pd.notnull(prod_data.get('tipo')) and prod_data['tipo'] in CATEGORIAS else ""
-                val_gen = prod_data['genero'] if pd.notnull(prod_data.get('genero')) and prod_data['genero'] in GENEROS else "Unisex"
+                # Obtener marcas actuales de la BD para evitar errores si la marca vino de un PDF
+                marcas_db = df_mod["tipo"].dropna().unique().tolist() if "tipo" in df_mod.columns else []
+                lista_categorias_total = sorted(list(set(CATEGORIAS + marcas_db)))
+                if "" not in lista_categorias_total:
+                    lista_categorias_total = [""] + [c for c in lista_categorias_total if c != ""]
+
+                val_tipo = prod_data.get('tipo', '')
+                if pd.isnull(val_tipo) or val_tipo not in lista_categorias_total:
+                    val_tipo = ""
+
+                val_gen = prod_data.get('genero', 'Unisex')
+                if pd.isnull(val_gen) or val_gen not in GENEROS:
+                    val_gen = 'Unisex'
+
+                val_est = prod_data.get('estado', 'A pedido')
+                if pd.isnull(val_est) or val_est not in ESTADOS:
+                    val_est = 'A pedido'
+
                 val_cap = limpiar_int_ml(prod_data.get('capacidad_ml', 100), 100)
-                val_decants = int(prod_data.get('decants_10ml_preparados', 0))
+                val_decants = int(prod_data.get('decants_10ml_preparados', 0)) if pd.notnull(prod_data.get('decants_10ml_preparados')) else 0
                 val_dest = bool(prod_data.get('destacado_portada', False))
 
                 with st.form("form_edicion"):
-                    nuevo_nombre = st.text_input("Nombre Interno (Proveedor)", value=prod_data['nombre'])
+                    nuevo_nombre = st.text_input("Nombre Interno (Proveedor)", value=str(prod_data.get('nombre', '')))
                     nuevo_nombre_comercial = st.text_input("Nombre Comercial (Visible en Catálogo sin 'nuevoo')", value=str(prod_data.get('nombre_comercial', '')))
                     
                     col_ed1, col_ed2, col_ed3 = st.columns(3)
                     with col_ed1:
-                        nuevo_tipo = st.selectbox("Marca / Categoría", CATEGORIAS, index=CATEGORIAS.index(val_tipo) if val_tipo in CATEGORIAS else 0)
+                        nuevo_tipo = st.selectbox("Marca / Categoría", lista_categorias_total, index=lista_categorias_total.index(val_tipo) if val_tipo in lista_categorias_total else 0)
                     with col_ed2:
                         nuevo_genero = st.selectbox("Género", GENEROS, index=GENEROS.index(val_gen) if val_gen in GENEROS else 0)
                     with col_ed3:
-                        nueva_capacidad = st.number_input("Capacidad Total en ML", min_value=10, value=val_cap, step=5)
+                        nueva_capacidad = st.number_input("Capacidad Total en ML", min_value=10, value=int(val_cap), step=5)
 
-                    nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(prod_data['estado']) if prod_data['estado'] in ESTADOS else 0)
+                    nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(val_est) if val_est in ESTADOS else 0)
                     
                     col_ed_s1, col_ed_s2 = st.columns(2)
                     with col_ed_s1:
-                        nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']))
+                        nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']) if pd.notnull(prod_data.get('costo_usd')) else 0.0)
                     with col_ed_s2:
-                        nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))
+                        nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data.get('margen_100ml_custom')) else float(margen_100_gen))
 
                     col_ed_b1, col_ed_b2, col_ed_b3 = st.columns(3)
                     with col_ed_b1:
-                        nbot = st.number_input("Frascos Cerrados en Stock", min_value=0, value=int(prod_data['botellas_100ml_cerradas']))
+                        nbot = st.number_input("Frascos Cerrados en Stock", min_value=0, value=int(prod_data.get('botellas_100ml_cerradas', 0)))
                     with col_ed_b2:
-                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(nueva_capacidad), value=int(prod_data['ml_disponibles_abiertos']))
+                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(nueva_capacidad), value=int(prod_data.get('ml_disponibles_abiertos', 0)))
                     with col_ed_b3:
                         ndec = st.number_input("🧪 Decants 10ml Listos", min_value=0, value=val_decants)
                     

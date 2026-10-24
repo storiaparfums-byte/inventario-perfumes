@@ -127,9 +127,10 @@ def limpiar_int_ml(val, defecto=100):
         if isinstance(val, bytes):
             val = val.decode('utf-8', errors='ignore')
         val_clean = re.sub(r'[^\d]', '', str(val))
-        return int(val_clean) if val_clean else defecto
+        res = int(val_clean) if val_clean else defecto
+        return max(10, res)
     except Exception:
-        return defecto
+        return max(10, defecto)
 
 def formatear_celular_wa(numero_str):
     if not numero_str:
@@ -2137,6 +2138,7 @@ else:
                     val_est = 'A pedido'
 
                 val_cap = limpiar_int_ml(prod_data.get('capacidad_ml', 100), 100)
+                val_cap_safe = max(10, int(val_cap))
                 val_decants = int(prod_data.get('decants_10ml_preparados', 0)) if pd.notnull(prod_data.get('decants_10ml_preparados')) else 0
                 val_dest = bool(prod_data.get('destacado_portada', False))
 
@@ -2150,7 +2152,7 @@ else:
                     with col_ed2:
                         nuevo_genero = st.selectbox("Género", GENEROS, index=GENEROS.index(val_gen) if val_gen in GENEROS else 0)
                     with col_ed3:
-                        nueva_capacidad = st.number_input("Capacidad Total en ML", min_value=10, value=int(val_cap), step=5)
+                        nueva_capacidad = st.number_input("Capacidad Total en ML", min_value=10, value=val_cap_safe, step=5)
 
                     nuevo_estado = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(val_est) if val_est in ESTADOS else 0)
                     
@@ -2158,13 +2160,15 @@ else:
                     with col_ed_s1:
                         nuevo_costo = st.number_input("Costo USD", value=float(prod_data['costo_usd']) if pd.notnull(prod_data.get('costo_usd')) else 0.0)
                     with col_ed_s2:
-                        nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data.get('margen_100ml_custom')) else float(margen_100_gen))
+                        nuevo_margen = st.number_input("Margen Custom %", value=float(prod_data['margen_100ml_custom']) if pd.notnull(prod_data['margen_100ml_custom']) else float(margen_100_gen))
 
                     col_ed_b1, col_ed_b2, col_ed_b3 = st.columns(3)
                     with col_ed_b1:
                         nbot = st.number_input("Frascos Cerrados en Stock", min_value=0, value=int(prod_data.get('botellas_100ml_cerradas', 0)))
                     with col_ed_b2:
-                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(nueva_capacidad), value=int(prod_data.get('ml_disponibles_abiertos', 0)))
+                        raw_ml_ab = int(prod_data.get('ml_disponibles_abiertos', 0)) if pd.notnull(prod_data.get('ml_disponibles_abiertos')) else 0
+                        safe_ml_ab = min(int(nueva_capacidad), max(0, raw_ml_ab))
+                        nml = st.number_input("ml Abiertos en Frasco", min_value=0, max_value=int(nueva_capacidad), value=safe_ml_ab)
                     with col_ed_b3:
                         ndec = st.number_input("🧪 Decants 10ml Listos", min_value=0, value=val_decants)
                     
